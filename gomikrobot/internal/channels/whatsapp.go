@@ -122,6 +122,13 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 		fmt.Println("WhatsApp: Connected")
 	}
 
+	// Enforce silent mode on every start/reconnect (FR-008: safe default).
+	// This prevents accidental outbound messages during setup or after restart.
+	if c.timeline != nil {
+		_ = c.timeline.SetSetting("silent_mode", "true")
+		fmt.Println("🔇 WhatsApp: silent mode enabled (default-on at startup)")
+	}
+
 	// Subscribe to outbound messages
 	c.Bus.Subscribe(c.Name(), func(msg *bus.OutboundMessage) {
 		go func() {

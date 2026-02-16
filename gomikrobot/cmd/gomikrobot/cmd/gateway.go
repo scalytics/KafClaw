@@ -24,6 +24,7 @@ import (
 	"github.com/KafClaw/KafClaw/gomikrobot/internal/channels"
 	"github.com/KafClaw/KafClaw/gomikrobot/internal/config"
 	"github.com/KafClaw/KafClaw/gomikrobot/internal/group"
+	"github.com/KafClaw/KafClaw/gomikrobot/internal/identity"
 	"github.com/KafClaw/KafClaw/gomikrobot/internal/memory"
 	"github.com/KafClaw/KafClaw/gomikrobot/internal/orchestrator"
 	"github.com/KafClaw/KafClaw/gomikrobot/internal/policy"
@@ -344,6 +345,25 @@ func runGateway(cmd *cobra.Command, args []string) {
 		}, memorySvc)
 		if er1Client != nil {
 			fmt.Println("🔗 ER1 client initialized")
+		}
+	}
+
+	// 5a-v. Auto-scaffold workspace if soul files are missing (for headless/Docker agents)
+	if cfg.Paths.Workspace != "" {
+		hasSoulFiles := true
+		for _, name := range identity.TemplateNames {
+			if _, err := os.Stat(filepath.Join(cfg.Paths.Workspace, name)); err != nil {
+				hasSoulFiles = false
+				break
+			}
+		}
+		if !hasSoulFiles {
+			result, err := identity.ScaffoldWorkspace(cfg.Paths.Workspace, false)
+			if err != nil {
+				fmt.Printf("⚠️ Workspace scaffold error: %v\n", err)
+			} else if len(result.Created) > 0 {
+				fmt.Printf("📂 Auto-scaffolded workspace: created %v\n", result.Created)
+			}
 		}
 	}
 

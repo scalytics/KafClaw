@@ -1,0 +1,147 @@
+# KafClaw Workshop: 3 headless agents + Kafka infrastructure
+#
+# Usage:
+#   cp .env.example .env   # fill in your values
+#   make workshop-up       # or: docker compose -f docker-compose.group.yml up -d
+#
+# The Mac Electron app runs separately as the 4th agent (desktop-orchestrator)
+# and connects to the same Kafka cluster at localhost:9092.
+
+services:
+
+  # ---------- Infrastructure ----------
+
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    volumes:
+      - zookeeper-data:/bitnami/zookeeper
+
+  kafka:
+    image: bitnami/kafka:3.7
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  lfs-proxy:
+    image: ${LFS_PROXY_IMAGE:-kafscale/lfs-proxy:latest}
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ---------- Headless Agents ----------
+
+  agent-researcher:
+    image: kafclaw:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MIKROBOT_GROUP_ENABLED: "true"
+      MIKROBOT_GROUP_GROUP_NAME: "${GROUP_NAME:-workshop}"
+      MIKROBOT_GROUP_AGENT_ID: "agent-researcher"
+      MIKROBOT_GROUP_KAFKA_BROKERS: "kafka:29092"
+      MIKROBOT_GROUP_KAFSCALE_LFS_PROXY_URL: "http://lfs-proxy:8080"
+      MIKROBOT_AGENTS_WORK_REPO_PATH: "/opt/work-repo"
+      MIKROBOT_AGENTS_WORKSPACE: "/opt/workspace"
+      MIKROBOT_AGENTS_SYSTEM_REPO_PATH: "/opt/system-repo"
+      MIKROBOT_GATEWAY_HOST: "0.0.0.0"
+      MIKROBOT_GATEWAY_AUTH_TOKEN: "${AGENT_AUTH_TOKEN}"
+      MIKROBOT_ORCHESTRATOR_ENABLED: "true"
+      MIKROBOT_ORCHESTRATOR_ROLE: "worker"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
+      WORK_REPO_GIT_URL: "${AGENT1_WORK_REPO_GIT_URL:-}"
+    volumes:
+      - ${AGENT1_WORK_REPO:-./volumes/agent-researcher/work-repo}:/opt/work-repo
+      - ${AGENT1_WORKSPACE:-./examples/workshop/agent-researcher/workspace}:/opt/workspace
+      - ./:/opt/system-repo:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      lfs-proxy:
+        condition: service_started
+
+  agent-coder:
+    image: kafclaw:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MIKROBOT_GROUP_ENABLED: "true"
+      MIKROBOT_GROUP_GROUP_NAME: "${GROUP_NAME:-workshop}"
+      MIKROBOT_GROUP_AGENT_ID: "agent-coder"
+      MIKROBOT_GROUP_KAFKA_BROKERS: "kafka:29092"
+      MIKROBOT_GROUP_KAFSCALE_LFS_PROXY_URL: "http://lfs-proxy:8080"
+      MIKROBOT_AGENTS_WORK_REPO_PATH: "/opt/work-repo"
+      MIKROBOT_AGENTS_WORKSPACE: "/opt/workspace"
+      MIKROBOT_AGENTS_SYSTEM_REPO_PATH: "/opt/system-repo"
+      MIKROBOT_GATEWAY_HOST: "0.0.0.0"
+      MIKROBOT_GATEWAY_AUTH_TOKEN: "${AGENT_AUTH_TOKEN}"
+      MIKROBOT_ORCHESTRATOR_ENABLED: "true"
+      MIKROBOT_ORCHESTRATOR_ROLE: "worker"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
+      WORK_REPO_GIT_URL: "${AGENT2_WORK_REPO_GIT_URL:-}"
+    volumes:
+      - ${AGENT2_WORK_REPO:-./volumes/agent-coder/work-repo}:/opt/work-repo
+      - ${AGENT2_WORKSPACE:-./examples/workshop/agent-coder/workspace}:/opt/workspace
+      - ./:/opt/system-repo:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      lfs-proxy:
+        condition: service_started
+
+  agent-reviewer:
+    image: kafclaw:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MIKROBOT_GROUP_ENABLED: "true"
+      MIKROBOT_GROUP_GROUP_NAME: "${GROUP_NAME:-workshop}"
+      MIKROBOT_GROUP_AGENT_ID: "agent-reviewer"
+      MIKROBOT_GROUP_KAFKA_BROKERS: "kafka:29092"
+      MIKROBOT_GROUP_KAFSCALE_LFS_PROXY_URL: "http://lfs-proxy:8080"
+      MIKROBOT_AGENTS_WORK_REPO_PATH: "/opt/work-repo"
+      MIKROBOT_AGENTS_WORKSPACE: "/opt/workspace"
+      MIKROBOT_AGENTS_SYSTEM_REPO_PATH: "/opt/system-repo"
+      MIKROBOT_GATEWAY_HOST: "0.0.0.0"
+      MIKROBOT_GATEWAY_AUTH_TOKEN: "${AGENT_AUTH_TOKEN}"
+      MIKROBOT_ORCHESTRATOR_ENABLED: "true"
+      MIKROBOT_ORCHESTRATOR_ROLE: "worker"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY}"
+      WORK_REPO_GIT_URL: "${AGENT3_WORK_REPO_GIT_URL:-}"
+    volumes:
+      - ${AGENT3_WORK_REPO:-./volumes/agent-reviewer/work-repo}:/opt/work-repo
+      - ${AGENT3_WORKSPACE:-./examples/workshop/agent-reviewer/workspace}:/opt/workspace
+      - ./:/opt/system-repo:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      lfs-proxy:
+        condition: service_started
+
+volumes:
+  zookeeper-data:
+  kafka-data:

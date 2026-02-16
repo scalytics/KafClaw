@@ -13,7 +13,8 @@ NPM_MIN_VERSION := 9
 	docker-build docker-up docker-down docker-logs \
 	run-standalone run-full run-headless \
 	electron-setup electron-dev electron-build electron-start electron-restart electron-dist \
-	kill-gateway
+	kill-gateway \
+	workshop-setup workshop-up workshop-down workshop-logs workshop-ps
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2} END {printf "\n"}' $(MAKEFILE_LIST)
@@ -232,8 +233,8 @@ dist-go: ## Cross-compile Go binaries locally (all platforms)
 # Docker
 # ---------------------------------------------------------------------------
 
-docker-build: build ## Build local Docker image (gomikrobot:local)
-	docker build -t gomikrobot:local -f Dockerfile .
+docker-build: ## Build local Docker image (gomikrobot:local) — multi-stage, no host binary needed
+	docker build -t kafclaw:local -f Dockerfile .
 
 docker-up: docker-build ## Start docker-compose using local image only
 	SYSTEM_REPO_PATH=$${SYSTEM_REPO_PATH:-$$(pwd)} WORK_REPO_PATH=$${WORK_REPO_PATH:-$${HOME}/KafClaw-Workspace} docker compose -f docker-compose.yml up -d --no-build
@@ -243,3 +244,22 @@ docker-down: ## Stop docker-compose
 
 docker-logs: ## Tail docker-compose logs
 	docker compose -f docker-compose.yml logs -f
+
+# ---------------------------------------------------------------------------
+# Workshop (group deployment: Kafka + 3 headless agents)
+# ---------------------------------------------------------------------------
+
+workshop-setup: ## Interactive setup for the 4-agent workshop
+	@bash scripts/setup-workshop.sh
+
+workshop-up: ## Start workshop stack (Kafka + 3 headless agents)
+	docker compose -f docker-compose.group.yml up -d
+
+workshop-down: ## Stop workshop stack
+	docker compose -f docker-compose.group.yml down
+
+workshop-logs: ## Tail workshop logs
+	docker compose -f docker-compose.group.yml logs -f
+
+workshop-ps: ## Show workshop container status
+	docker compose -f docker-compose.group.yml ps
