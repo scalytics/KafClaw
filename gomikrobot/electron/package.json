@@ -1,6 +1,6 @@
 {
   "name": "gomikrobot-desktop",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "description": "GoMikroBot Desktop - AI Assistant with three operation modes",
   "main": "dist/main/index.js",
   "scripts": {
@@ -35,6 +35,9 @@
     "type": "git",
     "url": "https://github.com/kamir/KafClaw.git"
   },
-  "author": "kamir",
+  "author": {
+    "name": "kamir",
+    "email": "kamir@users.noreply.github.com"
+  },
   "license": "MIT"
 }
