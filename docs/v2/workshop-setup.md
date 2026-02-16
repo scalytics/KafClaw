@@ -1,27 +1,43 @@
 # Workshop Setup — 4-Agent Group Deployment
 
-Deploy a KafClaw Workshop: 1 desktop Electron agent (Mac) + 3 headless Docker agents sharing one gateway and one Kafka bus.
+Deploy a KafClaw Workshop: 1 desktop Electron agent (Mac) + 3 headless Docker agents sharing one gateway and one KafScale bus.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Host Machine (Mac)                   │
-│                                                          │
-│  ┌──────────────────────┐    ┌────────────────────────┐ │
-│  │   Electron App       │    │   Docker Compose        │ │
-│  │   (desktop-orch.)    │    │                          │ │
-│  │                      │    │  Kafka + Zookeeper       │ │
-│  │  Gateway: 18790/91   │    │  KafScale LFS Proxy     │ │
-│  │  WhatsApp channel    │    │                          │ │
-│  │  Dashboard UI        │    │  agent-researcher        │ │
-│  │  Role: orchestrator  │    │  agent-coder             │ │
-│  │                      │    │  agent-reviewer           │ │
-│  └──────────────────────┘    └────────────────────────┘ │
-│         │                              │                 │
-│         └──────── Kafka (9092) ────────┘                 │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      Host Machine (Mac)                       │
+│                                                               │
+│  ┌──────────────────────┐    ┌─────────────────────────────┐ │
+│  │   Electron App       │    │   Docker Compose             │ │
+│  │   (desktop-orch.)    │    │                               │ │
+│  │                      │    │  MinIO (S3)     ← object store│ │
+│  │  Gateway: 18790/91   │    │  etcd           ← metadata    │ │
+│  │  WhatsApp channel    │    │  KafScale broker ← messaging  │ │
+│  │  Dashboard UI        │    │  KafScale LFS Proxy ← HTTP API│ │
+│  │  Role: orchestrator  │    │  KafScale Console  ← web UI   │ │
+│  │                      │    │                               │ │
+│  └──────────────────────┘    │  agent-researcher             │ │
+│         │                    │  agent-coder                   │ │
+│         │                    │  agent-reviewer                │ │
+│         │                    └─────────────────────────────┘ │
+│         └──── KafScale broker (9092) ─────────┘              │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+## Infrastructure Stack
+
+The workshop runs the full KafScale platform locally:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| MinIO | 9000 (API), 9001 (console) | S3-compatible object storage for LFS blobs |
+| etcd | 2379 | KafScale metadata and service discovery |
+| KafScale broker | 9092 | Kafka-compatible message broker |
+| KafScale LFS Proxy | 8080 (HTTP), 9093 (Kafka) | Large file transfer + HTTP produce API |
+| KafScale Console | 3080 | Web UI for broker monitoring + LFS dashboard |
+
+This is the same architecture as the production KafScale platform, but with a local MinIO instead of the Synology NAS.
 
 ## Prerequisites
 
@@ -29,6 +45,7 @@ Deploy a KafClaw Workshop: 1 desktop Electron agent (Mac) + 3 headless Docker ag
 - Git
 - Go 1.24+ (for building the Electron app / local gateway)
 - An OpenRouter API key
+- KafScale images accessible (ghcr.io/kafscale or local registry)
 
 ## Quick Start
 
@@ -39,9 +56,9 @@ cd gomikrobot
 make workshop-setup
 
 # Or manual steps:
-cp .env.example .env        # edit with your API key
+cp .env.example .env        # edit with your API key + registry
 make docker-build            # build kafclaw:local image
-make workshop-up             # start Kafka + 3 agents
+make workshop-up             # start KafScale + 3 agents
 ```
 
 ## Configuration
@@ -54,6 +71,18 @@ All configuration is via the `.env` file (see `.env.example` for all options).
 |----------|-------------|
 | `OPENROUTER_API_KEY` | Shared LLM key for all agents |
 | `AGENT_AUTH_TOKEN` | Random secret for headless agent APIs |
+
+### KafScale images
+
+```bash
+# Default: GitHub Container Registry
+KAFSCALE_REGISTRY=ghcr.io/kafscale
+KAFSCALE_TAG=dev
+
+# Local registry (if available)
+KAFSCALE_REGISTRY=192.168.0.131:5100/kafscale
+KAFSCALE_TAG=dev
+```
 
 ### Agent work repos
 
@@ -119,24 +148,30 @@ make workshop-ps     # Container status
 
 ## How It Works
 
-1. **Kafka** is the shared message bus. All agents publish and consume from group topics.
-2. **KafScale LFS Proxy** bridges large file transfers over Kafka.
-3. **Headless agents** run `gomikrobot gateway` in Docker with `MIKROBOT_GATEWAY_HOST=0.0.0.0`. Their ports are not exposed to the host — they communicate only via Kafka.
-4. **The desktop agent** exposes ports 18790 (API) and 18791 (dashboard) and owns the WhatsApp channel.
-5. On startup, each agent auto-scaffolds its workspace (soul files) if missing, and auto-joins the group specified in its config.
+1. **MinIO** provides S3-compatible object storage for LFS blobs (replaces the Synology NAS in production).
+2. **etcd** stores KafScale broker metadata and service discovery.
+3. **KafScale broker** provides Kafka-compatible messaging. All agents produce via LFS Proxy HTTP API and consume directly from the broker.
+4. **KafScale LFS Proxy** bridges HTTP produce requests to the broker and handles large file storage in S3.
+5. **Headless agents** run `gomikrobot gateway` in Docker with `MIKROBOT_GATEWAY_HOST=0.0.0.0`. Their ports are not exposed to the host — they communicate only via KafScale.
+6. **The desktop agent** exposes ports 18790 (API) and 18791 (dashboard) and owns the WhatsApp channel.
+7. On startup, each agent auto-scaffolds its workspace (soul files) if missing, and auto-joins the group specified in its config.
 
 ## Verification
 
 1. Check all containers are running: `make workshop-ps`
-2. Check agent logs for group join: `make workshop-logs`
-3. Open dashboard at `http://localhost:18791` — group roster should show 4 agents
-4. Send a message via the dashboard — it should be delegated to a headless agent
+2. MinIO console at `http://localhost:9001` (minioadmin/minioadmin) — verify `kafscale` bucket exists
+3. KafScale console at `http://localhost:3080` (kafscaleadmin/kafscale) — verify broker is healthy
+4. Check agent logs for group join: `make workshop-logs`
+5. Open KafClaw dashboard at `http://localhost:18791` — group roster should show 4 agents
+6. Send a message via the dashboard — it should be delegated to a headless agent
 
 ## Troubleshooting
 
 | Issue | Fix |
 |-------|-----|
-| Kafka not healthy | Wait 30s for startup, then check: `docker compose -f docker-compose.group.yml logs kafka` |
-| Agent can't join group | Verify `MIKROBOT_GROUP_KAFKA_BROKERS` points to `kafka:29092` (internal) for Docker agents, `localhost:9092` for host |
+| Broker not healthy | Wait 30s for startup. Check MinIO + etcd first: `docker compose -f docker-compose.group.yml logs broker` |
+| LFS proxy readiness fails | Broker must be healthy first. Check: `docker compose -f docker-compose.group.yml logs lfs-proxy` |
+| Agent can't join group | Verify `MIKROBOT_GROUP_KAFKA_BROKERS` points to `broker:9092` (internal) for Docker agents, `localhost:9092` for host |
 | Work repo empty | Set `WORK_REPO_GIT_URL` in `.env` or pre-populate the mounted directory |
 | Soul files missing | Agent auto-scaffolds defaults on startup. Customize `examples/workshop/*/workspace/SOUL.md` |
+| KafScale images not found | Set `KAFSCALE_REGISTRY` in `.env` to your registry (e.g., `192.168.0.131:5100/kafscale`) |

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # KafClaw Workshop Setup
 # Creates a 4-agent group: 1 Electron desktop + 3 headless Docker agents
-# sharing one gateway, one Kafka bus.
+# sharing one gateway, one KafScale bus with local MinIO for S3 storage.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -62,6 +62,14 @@ if [ ! -f "$ENV_FILE" ]; then
     read -rp "Group name [workshop]: " group_name
     group_name="${group_name:-workshop}"
 
+    # KafScale registry
+    echo ""
+    info "KafScale images are needed for broker, lfs-proxy, and console."
+    read -rp "KafScale registry [ghcr.io/kafscale]: " kafscale_registry
+    kafscale_registry="${kafscale_registry:-ghcr.io/kafscale}"
+    read -rp "KafScale image tag [dev]: " kafscale_tag
+    kafscale_tag="${kafscale_tag:-dev}"
+
     # Work repos — ask for each agent
     echo ""
     info "Each agent can mount a GitHub repo as its work directory."
@@ -77,6 +85,8 @@ if [ ! -f "$ENV_FILE" ]; then
 OPENROUTER_API_KEY=$api_key
 AGENT_AUTH_TOKEN=$auth_token
 GROUP_NAME=$group_name
+KAFSCALE_REGISTRY=$kafscale_registry
+KAFSCALE_TAG=$kafscale_tag
 EOF
 
     # Set work repo paths or git URLs
@@ -117,13 +127,16 @@ read -rp "Start the workshop now? [Y/n] " start_now
 if [[ "$start_now" =~ ^[Nn]$ ]]; then
     info "Skipping startup. Run later with: make workshop-up"
 else
-    info "Starting Kafka + agents..."
+    info "Starting KafScale platform + agents..."
     docker compose -f docker-compose.group.yml up -d
     info "Workshop started!"
     echo ""
-    echo "  Kafka:       localhost:9092"
-    echo "  LFS Proxy:   localhost:8080"
-    echo "  Agents:      agent-researcher, agent-coder, agent-reviewer"
+    echo "  MinIO S3:          http://localhost:9000  (console: http://localhost:9001)"
+    echo "  etcd:              http://localhost:2379"
+    echo "  KafScale broker:   localhost:9092"
+    echo "  KafScale LFS:      http://localhost:8080"
+    echo "  KafScale console:  http://localhost:3080  (kafscaleadmin/kafscale)"
+    echo "  Agents:            agent-researcher, agent-coder, agent-reviewer"
     echo ""
     echo "  View logs:   make workshop-logs"
     echo "  Stop:        make workshop-down"
