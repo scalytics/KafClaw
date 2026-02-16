@@ -1,6 +1,7 @@
-SHELL := /bin/zsh
-# Source the user's .zshrc so env vars (API keys, PATH, etc.) are available
-SOURCE_ENV := source $$HOME/.zshrc &&
+SHELL := /bin/bash
+# Source the user's shell profile so env vars (API keys, PATH, etc.) are available.
+# Tries .bashrc first (Linux default), then .zshrc (macOS default), then .profile (POSIX fallback).
+SOURCE_ENV := if [ -f "$$HOME/.bashrc" ]; then . "$$HOME/.bashrc"; elif [ -f "$$HOME/.zshrc" ]; then . "$$HOME/.zshrc"; elif [ -f "$$HOME/.profile" ]; then . "$$HOME/.profile"; fi &&
 
 .PHONY: help build run rerun test test-classification install \
 	release release-major release-minor release-patch dist-go \
@@ -156,7 +157,7 @@ docker-build: build ## Build local Docker image (gomikrobot:local)
 	docker build -t gomikrobot:local -f Dockerfile .
 
 docker-up: docker-build ## Start docker-compose using local image only
-	SYSTEM_REPO_PATH=$${SYSTEM_REPO_PATH:-$$(pwd)} WORK_REPO_PATH=$${WORK_REPO_PATH:-$${HOME}/GoMikroBot-Workspace} docker compose -f docker-compose.yml up -d --no-build
+	SYSTEM_REPO_PATH=$${SYSTEM_REPO_PATH:-$$(pwd)} WORK_REPO_PATH=$${WORK_REPO_PATH:-$${HOME}/KafClaw-Workspace} docker compose -f docker-compose.yml up -d --no-build
 
 docker-down: ## Stop docker-compose
 	docker compose -f docker-compose.yml down

@@ -133,6 +133,18 @@ Shell execution (`internal/tools/shell.go`) uses deny-pattern filtering (blocks 
 
 **New CLI command:** Create file in `cmd/gomikrobot/cmd/`, define cobra command, register in `root.go` init().
 
+## Task Workflow
+
+All implementation tasks follow a **plan → implement → log** cycle using `private/v2/`:
+
+1. **Plan**: Create a task file in `private/v2/tasks/` using the naming convention `TASK-xxx-short-description.md` (or `BUG-xxx-` for bugs). Include: Status, Priority, Objective, Steps, Verification, Acceptance Criteria.
+2. **Implement**: Set Status to `In Progress`, do the work.
+3. **Log**: When done, set Status to `Done` in the task file, then create a corresponding entry in `private/v2/tasklog/TASK-xxx-short-description.md` with: completion date, summary of what was done, insights/lessons learned, and relevant commit references.
+
+This keeps task documentation consistent over time. The `tasks/` directory shows current/planned work; `tasklog/` is the permanent record of completed work with results and insights.
+
+**Private repo sync**: The `private/` directory is tracked separately in `KafClaw-PRIVATE-PARTS` (sibling repo at `/Users/kamir/GITHUB.kamir/KafClaw-PRIVATE-PARTS`). Use `sync-from-kafclaw.sh` to push changes, `sync-to-kafclaw.sh` to pull.
+
 ## Go Module
 
 The Go module path is `github.com/KafClaw/KafClaw/gomikrobot`.
