@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-KafClaw (formerly GoMikroBot) is a personal AI assistant written in Go. The Go source lives in `gomikrobot/`. Sensitive specs, tasks, research, and governance docs live in the `private/` directory (gitignored — tracked separately in scalytics/KafClaw-PRIVATE-PARTS).
+KafClaw (formerly GoMikroBot) is a personal AI assistant written in Go. The Go source lives in `gomikrobot/`. Sensitive specs, tasks, research, and governance docs live in the `private/` directory (gitignored — tracked separately).
 
 ## Build & Run
 
