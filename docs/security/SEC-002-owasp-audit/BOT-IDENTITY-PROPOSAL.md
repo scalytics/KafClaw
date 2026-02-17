@@ -125,14 +125,14 @@ KafClaw Identity Registry
 
 ```
 1. CREATION
-   gomikrobot identity create --name "alpha"
+   kafclaw identity create --name "alpha"
    -> Generates ECDSA P-256 key pair
    -> Stores private key in OS keychain
    -> Creates bot_id: "kafclaw:alpha:{random}"
-   -> Writes identity record to ~/.gomikrobot/identities.db
+   -> Writes identity record to ~/.kafclaw/identities.db
 
 2. CONFIGURATION
-   gomikrobot identity configure "alpha" \
+   kafclaw identity configure "alpha" \
      --github-app-id 123456 \
      --github-installation-id 12345678 \
      --github-private-key /path/to/key.pem \
@@ -141,7 +141,7 @@ KafClaw Identity Registry
    -> Records scopes in identity database
 
 3. ACTIVATION
-   gomikrobot gateway --identity "alpha"
+   kafclaw gateway --identity "alpha"
    -> Loads identity from store
    -> Generates short-lived JWT for internal auth
    -> Authenticates to GitHub via App installation tokens
@@ -164,7 +164,7 @@ KafClaw Identity Registry
    GitHub App keys managed separately via GitHub UI
 
 6. REVOCATION
-   gomikrobot identity revoke "alpha"
+   kafclaw identity revoke "alpha"
    -> Marks identity as revoked in database
    -> Deletes private key from OS keychain
    -> Invalidates all active tokens
@@ -311,13 +311,13 @@ func (g *GitHubAppAuth) GetInstallationToken(ctx context.Context) (string, time.
 ### Phase 4: CLI Commands
 
 ```
-gomikrobot identity create --name <name> [--scopes <scope-list>]
-gomikrobot identity list
-gomikrobot identity show <name>
-gomikrobot identity configure <name> --github-app-id <id> --github-installation-id <id>
-gomikrobot identity rotate <name>
-gomikrobot identity revoke <name>
-gomikrobot identity export <name> --public-key  # Export public key for verification
+kafclaw identity create --name <name> [--scopes <scope-list>]
+kafclaw identity list
+kafclaw identity show <name>
+kafclaw identity configure <name> --github-app-id <id> --github-installation-id <id>
+kafclaw identity rotate <name>
+kafclaw identity revoke <name>
+kafclaw identity export <name> --public-key  # Export public key for verification
 ```
 
 ---
@@ -369,7 +369,7 @@ For self-hosted ("own clone of GitHub"):
 ### Step 1: Create Default Identity
 On first run after upgrade, automatically create a "default" identity:
 ```
-gomikrobot identity migrate
+kafclaw identity migrate
 -> Creates identity "default" with existing config's API keys
 -> Moves API keys from config.json to OS keychain
 -> Updates config.json to reference identity by name

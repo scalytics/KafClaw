@@ -131,7 +131,7 @@ The learning loop: Agent A discovers something, shares it as a memory item, Agen
 | `headless` | Yes | Yes | Server deployment (0.0.0.0 + auth) |
 
 ```bash
-cd gomikrobot
+cd KafClaw
 
 make run-standalone    # No Kafka, no orchestrator
 make run               # Default gateway
@@ -146,13 +146,13 @@ make run-headless      # Server mode (requires MIKROBOT_GATEWAY_AUTH_TOKEN)
 ```bash
 # Prerequisites: Go 1.24+, Apache Kafka (for group modes)
 
-cd gomikrobot
+cd KafClaw
 
 # Build
 make build
 
 # Run single message (standalone, no Kafka needed)
-./gomikrobot agent -m "hello"
+./kafclaw agent -m "hello"
 
 # Run gateway (standalone mode)
 make run-standalone
@@ -164,12 +164,12 @@ make run-full
 go test ./...
 
 # Kafka diagnostics
-./gomikrobot kshark --broker localhost:9092 --test-connection
+./kafclaw kshark --broker localhost:9092 --test-connection
 ```
 
 ### Configuration
 
-Loaded in order: environment variables > `~/.gomikrobot/config.json` > defaults.
+Loaded in order: environment variables > `~/.kafclaw/config.json` > defaults.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -187,7 +187,7 @@ Gateway ports: **18790** (API), **18791** (dashboard).
 ## Key Packages
 
 ```
-gomikrobot/internal/
+internal/
 ├── group/          # Kafka-based group collaboration, onboarding, skills, shared memory
 ├── orchestrator/   # Hierarchy, zones, discovery
 ├── agent/          # Core agent loop, context builder, soul file loading
@@ -212,16 +212,16 @@ gomikrobot/internal/
 KShark is a built-in Kafka diagnostic tool for verifying connectivity and inspecting group infrastructure:
 
 ```bash
-./gomikrobot kshark --broker localhost:9092 --test-connection
-./gomikrobot kshark --broker localhost:9092 --probe-topics --group mygroup
-./gomikrobot kshark --broker localhost:9092 --network-diag
+./kafclaw kshark --broker localhost:9092 --test-connection
+./kafclaw kshark --broker localhost:9092 --probe-topics --group mygroup
+./kafclaw kshark --broker localhost:9092 --network-diag
 ```
 
 ---
 
 ## Releases
 
-- Local: `make release-patch` (or `release-minor`, `release-major`) in `gomikrobot/`
+- Local: `make release-patch` (or `release-minor`, `release-major`) in `kafclaw/`
 - CI: push a tag `vX.Y.Z` to trigger the build workflow
 - Cross-compile: `make dist-go` produces binaries for darwin/linux (amd64/arm64)
 - Electron desktop: `make electron-dist` packages for current platform

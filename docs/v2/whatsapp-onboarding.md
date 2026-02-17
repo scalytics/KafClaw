@@ -12,19 +12,19 @@ KafClaw uses **default-deny** for WhatsApp. New senders are blocked until the ow
 
 ```bash
 # First-time setup — creates config and workspace
-gomikrobot onboard
+kafclaw onboard
 
 # Pair your WhatsApp account (scan QR code)
-gomikrobot whatsapp-auth
+kafclaw whatsapp-auth
 ```
 
-The QR code is saved to `~/.gomikrobot/whatsapp-qr.png`. Open it and scan with WhatsApp on your phone.
+The QR code is saved to `~/.kafclaw/whatsapp-qr.png`. Open it and scan with WhatsApp on your phone.
 
 ## Step 2: Configure Auth Settings
 
 ```bash
 # Set a pairing token (shared out-of-band with your buddy)
-gomikrobot whatsapp-setup
+kafclaw whatsapp-setup
 ```
 
 This prompts for:
@@ -76,11 +76,11 @@ Once setup is verified and the buddy is approved:
 
 ```bash
 # Approve a sender
-gomikrobot whatsapp-auth --approve 1234567890@s.whatsapp.net
+kafclaw whatsapp-auth --approve 1234567890@s.whatsapp.net
 
 # Deny a sender
-gomikrobot whatsapp-auth --deny 1234567890@s.whatsapp.net
+kafclaw whatsapp-auth --deny 1234567890@s.whatsapp.net
 
 # List all auth entries
-gomikrobot whatsapp-auth --list
+kafclaw whatsapp-auth --list
 ```

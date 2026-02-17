@@ -6,15 +6,15 @@
 
 ## Summary
 
-Removed the zsh dependency from `gomikrobot/Makefile` so it works on any system with bash (macOS, Ubuntu, Debian, Alpine, Jetson Nano ARM64).
+Removed the zsh dependency from `kafclaw/Makefile` so it works on any system with bash (macOS, Ubuntu, Debian, Alpine, Jetson Nano ARM64).
 
 ## Changes Made
 
-**File:** `gomikrobot/Makefile`
+**File:** `kafclaw/Makefile`
 
 1. **SHELL directive** (line 1): `/bin/zsh` → `/bin/bash`
 2. **SOURCE_ENV** (lines 2-4): Replaced `source $$HOME/.zshrc &&` with a cascading fallback that tries `.bashrc` → `.zshrc` → `.profile` using POSIX `.` instead of `source`.
-3. **docker-up** (line 159): Updated default workspace path from `GoMikroBot-Workspace` to `KafClaw-Workspace` (caught during implementation — aligned with the rebranding done earlier in this session).
+3. **docker-up** (line 159): Updated default workspace path from `KafClaw-Workspace` to `KafClaw-Workspace` (caught during implementation — aligned with the rebranding done earlier in this session).
 
 No changes needed to `kill-gateway` — the `[[ ]]` and `set -euo pipefail` syntax is valid bash.
 
@@ -32,7 +32,7 @@ No changes needed to `kill-gateway` — the `[[ ]]` and `set -euo pipefail` synt
 - The task spec (written before implementation) was accurate and complete — both changes were exactly as described, no surprises.
 - Step 3 (kill-gateway bash compat) was confirmed as a no-op — bash handles `[[ ]]` fine.
 - Step 4 (env var prefix rebranding) is correctly deferred — still uses `MIKROBOT_*` which matches the Go code's `envconfig` prefix.
-- Bonus fix: `docker-up` default path was still `GoMikroBot-Workspace`, now aligned with the KafClaw rebranding.
+- Bonus fix: `docker-up` default path was still `KafClaw-Workspace`, now aligned with the KafClaw rebranding.
 
 ## Acceptance Criteria
 
