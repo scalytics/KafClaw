@@ -114,7 +114,7 @@ These items have high security impact, low implementation complexity, and no arc
 
 **Fix:** Replace wildcard with explicit origin allowlist.
 
-**Files:** `cmd/kafclaw/cmd/gateway.go` (10 instances)
+**Files:** `internal/cli/gateway.go` (10 instances)
 
 **Implementation:**
 ```go
@@ -213,7 +213,7 @@ w.Header().Set("Content-Security-Policy",
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'")
 ```
 
-**Files:** `cmd/kafclaw/cmd/gateway.go` (dashboard server section)
+**Files:** `internal/cli/gateway.go` (dashboard server section)
 
 ### 4.4 Add Rate Limiting to Gateway (MEDIUM)
 
@@ -232,7 +232,7 @@ limiter := rate.NewLimiter(rate.Every(time.Second), 10) // 10 req/s burst
 
 **Fix:** When `Host != "127.0.0.1"` and TLS is not configured, log a prominent warning and optionally refuse to start (configurable `RequireTLS` flag).
 
-**Files:** `cmd/kafclaw/cmd/gateway.go`
+**Files:** `internal/cli/gateway.go`
 
 ---
 
@@ -489,7 +489,7 @@ Based on commit timestamps and release cadence:
 
 | File | What It Controls |
 |------|-----------------|
-| `cmd/kafclaw/cmd/gateway.go` | All API endpoints, CORS headers, auth middleware, TLS config |
+| `internal/cli/gateway.go` | All API endpoints, CORS headers, auth middleware, TLS config |
 | `internal/tools/shell.go` | Shell execution sandbox (deny/allow patterns, path traversal, timeout) |
 | `internal/tools/filesystem.go` | Path traversal protection, workspace boundary enforcement |
 | `internal/policy/engine.go` | 3-tier tool authorization, sender classification |

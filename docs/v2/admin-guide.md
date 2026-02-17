@@ -377,7 +377,7 @@ type Tool interface {
 
 ### Adding a New CLI Command
 
-1. Create file in `cmd/kafclaw/cmd/`
+1. Create file in `internal/cli/`
 2. Define `cobra.Command`
 3. Register in `root.go` `init()`
 

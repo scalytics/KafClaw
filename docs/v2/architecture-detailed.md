@@ -56,7 +56,7 @@ Scheduler -+       |              |              +-- Web Search
 
 ```
 kafclaw/
-+-- cmd/kafclaw/cmd/              # CLI commands (Cobra)
++-- internal/cli/              # CLI commands (Cobra)
 |   +-- root.go                   # Root command, version
 |   +-- gateway.go                # Main daemon (all API endpoints)
 |   +-- agent.go                  # Single-message CLI mode
@@ -725,7 +725,7 @@ ContextBuilder.BuildSystemPrompt()
 
 ### Adding a New CLI Command
 
-1. Create file in `cmd/kafclaw/cmd/`
+1. Create file in `internal/cli/`
 2. Define cobra command, register in `root.go init()`
 
 ### Adding a New Memory Source

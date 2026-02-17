@@ -70,7 +70,7 @@ Soul files are scaffolded by `kafclaw onboard` from embedded templates (`interna
 
 ```
 kafclaw/
-├── cmd/kafclaw/cmd/           # CLI commands (Cobra)
+├── internal/cli/           # CLI commands (Cobra)
 │   ├── root.go                   # Root command, version (v2.5.3)
 │   ├── gateway.go                # Main daemon (~2800 lines, all API endpoints)
 │   ├── agent.go                  # Single-message CLI mode
@@ -1004,7 +1004,7 @@ ContextBuilder.BuildSystemPrompt()
 
 ### Adding a New CLI Command
 
-1. Create file in `cmd/kafclaw/cmd/`
+1. Create file in `internal/cli/`
 2. Define cobra command
 3. Register in `root.go` `init()`
 

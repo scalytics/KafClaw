@@ -19,11 +19,11 @@ This audit identifies **6 Critical**, **9 High**, **12 Medium**, and **8 Low** s
 
 | ID | Severity | Finding | Location |
 |----|----------|---------|----------|
-| A01-1 | **CRITICAL** | Wildcard CORS (`Access-Control-Allow-Origin: *`) on all API endpoints | `cmd/kafclaw/cmd/gateway.go:610,638,651+` |
-| A01-2 | **HIGH** | Authentication is optional - gateway works without `AuthToken` configured | `cmd/kafclaw/cmd/gateway.go:3077-3091` |
-| A01-3 | **HIGH** | Status endpoint bypasses auth middleware, leaks operational mode | `cmd/kafclaw/cmd/gateway.go:3080-3082` |
+| A01-1 | **CRITICAL** | Wildcard CORS (`Access-Control-Allow-Origin: *`) on all API endpoints | `internal/cli/gateway.go:610,638,651+` |
+| A01-2 | **HIGH** | Authentication is optional - gateway works without `AuthToken` configured | `internal/cli/gateway.go:3077-3091` |
+| A01-3 | **HIGH** | Status endpoint bypasses auth middleware, leaks operational mode | `internal/cli/gateway.go:3080-3082` |
 | A01-4 | **MEDIUM** | Policy engine `AllowedSenders` empty by default (all senders allowed) | `internal/policy/engine.go:52-56` |
-| A01-5 | **MEDIUM** | Gateway sets `MaxAutoTier = 2`, allowing automatic shell execution | `cmd/kafclaw/cmd/gateway.go:130` |
+| A01-5 | **MEDIUM** | Gateway sets `MaxAutoTier = 2`, allowing automatic shell execution | `internal/cli/gateway.go:130` |
 
 **Detail: A01-1 - Wildcard CORS**
 ```go
@@ -77,7 +77,7 @@ if cfg.Gateway.AuthToken != "" {
 | A02-4 | **HIGH** | WhatsApp session database unencrypted at `~/.kafclaw/whatsapp.db` | `internal/channels/whatsapp.go:68-75` |
 | A02-5 | **HIGH** | API keys stored in plaintext JSON at `~/.kafclaw/config.json` | `internal/config/loader.go:194` |
 | A02-6 | **MEDIUM** | File creation uses `0644` permissions (world-readable) | `internal/tools/filesystem.go` |
-| A02-7 | **MEDIUM** | No HSTS header when TLS is enabled | `cmd/kafclaw/cmd/gateway.go:3096-3110` |
+| A02-7 | **MEDIUM** | No HSTS header when TLS is enabled | `internal/cli/gateway.go:3096-3110` |
 
 **Detail: A02-1/A02-2 - Unencrypted Session Storage**
 ```go
@@ -121,7 +121,7 @@ Config file at `~/.kafclaw/config.json` stores API keys for: Anthropic, OpenAI, 
 |----|----------|---------|----------|
 | A03-1 | **CRITICAL** | System prompt injection via soul files (no sanitization) | `internal/agent/context.go:37-59` |
 | A03-2 | **HIGH** | Shell tool regex bypass via metacharacters (`$()`, backticks) | `internal/tools/shell.go:15-53` |
-| A03-3 | **MEDIUM** | Git branch name injection (minimal validation) | `cmd/kafclaw/cmd/gateway.go:2447-2458` |
+| A03-3 | **MEDIUM** | Git branch name injection (minimal validation) | `internal/cli/gateway.go:2447-2458` |
 | A03-4 | **LOW** | SQL injection not found (parameterized queries used throughout) | `internal/timeline/` |
 
 **Detail: A03-1 - Prompt Injection via Soul Files**
@@ -261,7 +261,7 @@ Or better: bundle dependencies locally and serve from the Go binary.
 | ID | Severity | Finding | Location |
 |----|----------|---------|----------|
 | A07-1 | **CRITICAL** | No CSRF protection on state-changing endpoints | All POST endpoints in gateway.go |
-| A07-2 | **HIGH** | Single static bearer token (no per-user or per-session tokens) | `cmd/kafclaw/cmd/gateway.go:3077-3091` |
+| A07-2 | **HIGH** | Single static bearer token (no per-user or per-session tokens) | `internal/cli/gateway.go:3077-3091` |
 | A07-3 | **MEDIUM** | WhatsApp pairing token stored in timeline settings | `internal/channels/whatsapp.go:556-558` |
 | A07-4 | **MEDIUM** | No token expiration or rotation mechanism | Gateway auth system |
 
@@ -295,7 +295,7 @@ State-changing endpoints vulnerable to CSRF:
 | ID | Severity | Finding | Location |
 |----|----------|---------|----------|
 | A09-1 | **MEDIUM** | No security-specific audit logging | Gateway HTTP handlers |
-| A09-2 | **MEDIUM** | Failed auth attempts not logged separately | `cmd/kafclaw/cmd/gateway.go:3088` |
+| A09-2 | **MEDIUM** | Failed auth attempts not logged separately | `internal/cli/gateway.go:3088` |
 | A09-3 | **LOW** | Timeline logs tool executions but not HTTP access patterns | `internal/timeline/` |
 
 **Remediation:**
@@ -378,7 +378,7 @@ These areas demonstrate good security practices:
 | `internal/session/session.go` | 315 | Conversation persistence |
 | `internal/policy/engine.go` | 103 | Access control decisions |
 | `internal/approval/manager.go` | 86+ | Approval workflow, argument storage |
-| `cmd/kafclaw/cmd/gateway.go` | 3399 | HTTP API, auth, CORS, endpoints |
+| `internal/cli/gateway.go` | 3399 | HTTP API, auth, CORS, endpoints |
 | `web/index.html` | 380+ | Dashboard, inline JS, CDN deps |
 | `web/timeline.html` | 3200+ | Event viewer, localStorage, CDN deps |
 | `web/approvals.html` | 200+ | Approval UI, CDN deps |

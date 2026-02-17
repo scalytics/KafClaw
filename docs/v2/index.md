@@ -1,6 +1,12 @@
-# KafClaw Documentation
+# KafClaw Documentation (v2)
 
-Reference documentation for KafClaw — a personal AI assistant framework written in Go with an Electron desktop frontend.
+Primary v2 reference set for KafClaw.
+
+## Quick Links
+
+- [Docs Home](../index.md)
+- [Getting Started](../getting-started.md)
+- [Operations and Maintenance](../maintenance.md)
 
 ## Guides
 
@@ -19,14 +25,7 @@ Reference documentation for KafClaw — a personal AI assistant framework writte
 | [release](./release.md) | Versioning, Make targets, CI/CD |
 | [memory-notes](./memory-notes.md) | Personal context notes |
 
-## Related
+## Scope
 
-- [v2 Requirements](../requirements/) — FR-001 through FR-025
-- [v2 Tasks](../tasks/) — Active bug reports and task plans
-- [v1 Legacy Docs](../../v1/docs/guides/) — Read-only historical reference
-
-## Project Structure
-
-- `KafClaw/` — Go source code + Electron app
-- `~/.kafclaw/workspace` — Agent state, sessions, media
-- `~/.kafclaw/work-repo` — Agent-generated artifacts
+- `docs/v2/` is the current documentation set.
+- `docs/security/`, `docs/bugs/`, and `docs/tasklogs/` keep audit and implementation history.

@@ -4,16 +4,95 @@ on:
   push:
     tags:
       - "v*"
+      - "edge-*"
+  schedule:
+    - cron: "0 2 * * *"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "Release channel"
+        required: true
+        default: edge
+        type: choice
+        options:
+          - edge
+          - stable
+      version_tag:
+        description: "Optional tag override (e.g. v1.2.3 or edge-20260217)"
+        required: false
+        type: string
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      version_tag: ${{ steps.meta.outputs.version_tag }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      release_name: ${{ steps.meta.outputs.release_name }}
+    steps:
+      - name: Determine release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          event="${GITHUB_EVENT_NAME}"
+          ref_tag="${GITHUB_REF#refs/tags/}"
+          input_channel="${{ github.event.inputs.channel || '' }}"
+          input_tag="${{ github.event.inputs.version_tag || '' }}"
+
+          channel="edge"
+          prerelease="true"
+          version_tag=""
+
+          if [[ "$event" == "push" ]]; then
+            version_tag="$ref_tag"
+            if [[ "$ref_tag" == v* ]]; then
+              channel="stable"
+              prerelease="false"
+            else
+              channel="edge"
+              prerelease="true"
+            fi
+          elif [[ "$event" == "workflow_dispatch" ]]; then
+            if [[ "$input_channel" == "stable" ]]; then
+              channel="stable"
+              prerelease="false"
+            else
+              channel="edge"
+              prerelease="true"
+            fi
+
+            if [[ -n "$input_tag" ]]; then
+              version_tag="$input_tag"
+            elif [[ "$channel" == "stable" ]]; then
+              version_tag="v0.0.0-manual-${GITHUB_SHA:0:7}"
+            else
+              version_tag="edge-$(date -u +%Y%m%d)-${GITHUB_SHA:0:7}"
+            fi
+          else
+            channel="edge"
+            prerelease="true"
+            version_tag="edge-$(date -u +%Y%m%d)-${GITHUB_SHA:0:7}"
+          fi
+
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "version_tag=$version_tag" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "release_name=KafClaw $version_tag ($channel)" >> "$GITHUB_OUTPUT"
+
   # -------------------------------------------------------------------
-  # Job 1: Cross-compile Go CLI binaries (all platforms from one runner)
+  # Job 1: Cross-compile Go CLI binaries (release artifacts)
+  # Includes: macOS, Windows, Linux amd64/arm64, Raspberry Pi armv7/armv6
   # -------------------------------------------------------------------
   build-go:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,12 +100,32 @@ jobs:
         include:
           - goos: darwin
             goarch: arm64
+            artifact_suffix: darwin-arm64
           - goos: darwin
             goarch: amd64
+            artifact_suffix: darwin-amd64
+          - goos: windows
+            goarch: amd64
+            artifact_suffix: windows-amd64
+            ext: .exe
+          - goos: windows
+            goarch: arm64
+            artifact_suffix: windows-arm64
+            ext: .exe
           - goos: linux
             goarch: amd64
+            artifact_suffix: linux-amd64
           - goos: linux
             goarch: arm64
+            artifact_suffix: linux-arm64
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+            artifact_suffix: linux-armv7
+          - goos: linux
+            goarch: arm
+            goarm: "6"
+            artifact_suffix: linux-armv6
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,32 +136,148 @@ jobs:
           go-version: "1.24.13"
           cache-dependency-path: go.sum
 
-      - name: Extract version from tag
-        id: version
-        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-
-      - name: Build
-        working-directory: .
+      - name: Build hardened binary
+        shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: "0"
         run: |
-          BIN_NAME="kafclaw-${{ matrix.goos }}-${{ matrix.goarch }}"
-          go build -ldflags "-X github.com/KafClaw/KafClaw/cmd/kafclaw/cmd.version=${{ steps.version.outputs.tag }}" \
-            -o "dist/${BIN_NAME}" ./cmd/kafclaw
-          chmod +x "dist/${BIN_NAME}"
+          set -euo pipefail
+          mkdir -p dist
+
+          BIN_NAME="kafclaw-${{ matrix.artifact_suffix }}${{ matrix.ext }}"
+          LDFLAGS="-s -w -buildid= -X github.com/KafClaw/KafClaw/internal/cli.version=${{ needs.prepare.outputs.version_tag }}"
+
+          go build -trimpath -ldflags "$LDFLAGS" -o "dist/${BIN_NAME}" ./cmd/kafclaw
+
+          if [[ "${{ matrix.goos }}" != "windows" ]]; then
+            chmod +x "dist/${BIN_NAME}"
+          fi
+
+      - name: Smoke test (where executable on runner)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN_NAME="kafclaw-${{ matrix.artifact_suffix }}${{ matrix.ext }}"
+          if [[ "${{ matrix.goos }}" == "linux" && "${{ matrix.goarch }}" == "amd64" ]]; then
+            ./dist/${BIN_NAME} --help >/dev/null
+          else
+            echo "Skipping smoke test for cross-arch target ${{ matrix.goos }}/${{ matrix.goarch }}"
+          fi
+
+      - name: Build Linux systemd install bundle
+        if: matrix.goos == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN_NAME="kafclaw-${{ matrix.artifact_suffix }}${{ matrix.ext }}"
+          BUNDLE_DIR="dist/kafclaw-${{ matrix.artifact_suffix }}-bundle"
+          mkdir -p "$BUNDLE_DIR/bin" "$BUNDLE_DIR/systemd" "$BUNDLE_DIR/env"
+
+          cp "dist/${BIN_NAME}" "$BUNDLE_DIR/bin/kafclaw"
+
+          cat > "$BUNDLE_DIR/systemd/kafclaw.service" <<'UNIT'
+          [Unit]
+          Description=KafClaw Gateway
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=kafclaw
+          Group=kafclaw
+          WorkingDirectory=/home/kafclaw
+          ExecStart=/usr/local/bin/kafclaw gateway
+          EnvironmentFile=/home/kafclaw/.config/kafclaw/env
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+
+          cat > "$BUNDLE_DIR/env/kafclaw.env" <<'ENVFILE'
+          # KafClaw runtime environment
+          MIKROBOT_GATEWAY_AUTH_TOKEN=
+          KAFCLAW_CONFIG=/home/kafclaw/.kafclaw/config.json
+          KAFCLAW_HOME=/home/kafclaw
+          HOME=/home/kafclaw
+          PATH=/home/kafclaw/.local/bin:/usr/local/bin:/usr/bin:/bin
+          ENVFILE
+
+          cat > "$BUNDLE_DIR/install.sh" <<'INSTALL'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          install -m 0755 bin/kafclaw /usr/local/bin/kafclaw
+          install -d -m 0755 /etc/systemd/system
+          install -m 0644 systemd/kafclaw.service /etc/systemd/system/kafclaw.service
+
+          install -d -m 0700 /home/kafclaw/.config/kafclaw
+          if [[ ! -f /home/kafclaw/.config/kafclaw/env ]]; then
+            install -m 0600 env/kafclaw.env /home/kafclaw/.config/kafclaw/env
+          fi
+
+          systemctl daemon-reload
+          echo "Installed. Run: systemctl enable --now kafclaw"
+          INSTALL
+          chmod +x "$BUNDLE_DIR/install.sh"
+
+          tar -C dist -czf "dist/kafclaw-${{ matrix.artifact_suffix }}-bundle.tar.gz" "kafclaw-${{ matrix.artifact_suffix }}-bundle"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kafclaw-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: kafclaw-${{ matrix.artifact_suffix }}
           path: dist/*
 
   # -------------------------------------------------------------------
-  # Job 2: Package Electron desktop app (needs native runners)
+  # Job 2: Platform smoke tests on native runners (where possible)
+  # -------------------------------------------------------------------
+  smoke-native:
+    needs: [prepare, build-go]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            artifact: kafclaw-linux-amd64
+            binary: kafclaw-linux-amd64
+          - runner: windows-latest
+            artifact: kafclaw-windows-amd64
+            binary: kafclaw-windows-amd64.exe
+          - runner: macos-latest
+            artifact: kafclaw-darwin-arm64
+            binary: kafclaw-darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+
+      - name: Smoke test (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x "dist/${{ matrix.binary }}"
+          "dist/${{ matrix.binary }}" --help >/dev/null
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "dist/${{ matrix.binary }}" --help | Out-Null
+
+  # -------------------------------------------------------------------
+  # Job 3: Electron packaging
   # -------------------------------------------------------------------
   build-electron:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -92,13 +307,12 @@ jobs:
           node-version: "20"
 
       - name: Build Go binary for target platform
-        working-directory: .
         env:
           GOOS: ${{ matrix.go_goos }}
           GOARCH: ${{ matrix.go_goarch }}
           CGO_ENABLED: "0"
         run: |
-          go build -o kafclaw ./cmd/kafclaw
+          go build -trimpath -ldflags "-s -w -buildid= -X github.com/KafClaw/KafClaw/internal/cli.version=${{ needs.prepare.outputs.version_tag }}" -o kafclaw ./cmd/kafclaw
           chmod +x kafclaw
 
       - name: Install Electron dependencies
@@ -122,32 +336,68 @@ jobs:
             electron/release/*.AppImage
 
   # -------------------------------------------------------------------
-  # Job 3: Publish GitHub Release with all artifacts
+  # Job 4: Publish release, checksums, signatures, SBOM, provenance
   # -------------------------------------------------------------------
   release:
-    needs: [build-go, build-electron]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [prepare, build-go, smoke-native, build-electron]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
       - name: Prepare release files
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p release_files
-          # Flatten Go binaries
-          find artifacts -name "kafclaw-*" -type f -exec cp {} release_files/ \;
-          # Flatten Electron packages
-          find artifacts -name "*.dmg" -type f -exec cp {} release_files/ \;
-          find artifacts -name "*.AppImage" -type f -exec cp {} release_files/ \;
+          find artifacts -type f \( -name "kafclaw-*" -o -name "*.exe" -o -name "*.tar.gz" -o -name "*.dmg" -o -name "*.AppImage" \) -exec cp {} release_files/ \;
+
+          (cd release_files && sha256sum * > SHA256SUMS)
           echo "Release files:"
           ls -lh release_files/
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign release artifacts (keyless)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in release_files/*; do
+            base="$(basename "$f")"
+            if [[ "$base" == "SHA256SUMS" || "$base" == *.sig || "$base" == *.pem ]]; then
+              continue
+            fi
+            cosign sign-blob --yes \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "$f"
+          done
+
+      - name: Generate SBOM (SPDX JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          path: release_files
+          format: spdx-json
+          output-file: release_files/sbom.spdx.json
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release_files/*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.version_tag }}
+          name: ${{ needs.prepare.outputs.release_name }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           draft: false
           generate_release_notes: true
           files: release_files/*

@@ -135,7 +135,7 @@ Shell execution (`internal/tools/shell.go`) uses deny-pattern filtering (blocks 
 
 **New channel:** Implement `Channel` interface in `internal/channels/`, subscribe to the message bus, add config fields to `internal/config/config.go`.
 
-**New CLI command:** Create file in `cmd/kafclaw/cmd/`, define cobra command, register in `root.go` init().
+**New CLI command:** Create file in `internal/cli/`, define cobra command, register in `root.go` init().
 
 ## Task Workflow
 

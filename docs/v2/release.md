@@ -4,10 +4,10 @@
 
 ## Versioning
 
-KafClaw uses semantic versioning (`MAJOR.MINOR.PATCH`). The version is defined in `cmd/kafclaw/cmd/root.go` and can be overridden at build time:
+KafClaw uses semantic versioning (`MAJOR.MINOR.PATCH`). The version is defined in `internal/cli/root.go` and can be overridden at build time:
 
 ```bash
-go build -ldflags "-X github.com/kamir/kafclaw/cmd/kafclaw/cmd.version=2.6.0" ./cmd/kafclaw
+go build -ldflags "-X github.com/kamir/kafclaw/internal/cli.version=2.6.0" ./cmd/kafclaw
 ```
 
 ## Make Targets

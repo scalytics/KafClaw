@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ROOT_GO="${ROOT_DIR}/cmd/kafclaw/cmd/root.go"
+ROOT_GO="${ROOT_DIR}/internal/cli/root.go"
 GIT_ROOT="$(git -C "$ROOT_DIR" rev-parse --show-toplevel)"
 
 if [[ ! -f "$ROOT_GO" ]]; then

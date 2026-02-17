@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,58 @@ import (
 	"github.com/KafClaw/KafClaw/internal/policy"
 	"github.com/KafClaw/KafClaw/internal/provider"
 )
+
+type outboundCapture struct {
+	mu   sync.Mutex
+	msgs []bus.OutboundMessage
+}
+
+func (c *outboundCapture) add(msg *bus.OutboundMessage) {
+	if msg == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.msgs = append(c.msgs, *msg)
+}
+
+func (c *outboundCapture) snapshot() []bus.OutboundMessage {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]bus.OutboundMessage, len(c.msgs))
+	copy(out, c.msgs)
+	return out
+}
+
+func extractApprovalID(content string) string {
+	idx := strings.Index(content, "approve:")
+	if idx < 0 {
+		return ""
+	}
+	rest := content[idx+len("approve:"):]
+	end := strings.IndexAny(rest, " \n\r")
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
+}
+
+func waitForApprovalPrompt(t *testing.T, capture *outboundCapture, timeout time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, o := range capture.snapshot() {
+			if strings.Contains(o.Content, "requires approval") {
+				if id := extractApprovalID(o.Content); id != "" {
+					return id
+				}
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for approval prompt")
+	return ""
+}
 
 // TestApprovalFlowApproved exercises the full approval gate when the user approves.
 //
@@ -58,9 +111,9 @@ func TestApprovalFlowApproved(t *testing.T) {
 	})
 
 	// Capture outbound messages
-	var outbound []*bus.OutboundMessage
+	var outbound outboundCapture
 	msgBus.Subscribe("whatsapp", func(msg *bus.OutboundMessage) {
-		outbound = append(outbound, msg)
+		outbound.add(msg)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -93,33 +146,7 @@ func TestApprovalFlowApproved(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for the approval prompt to appear
-	var approvalID string
-	deadline := time.After(5 * time.Second)
-	for approvalID == "" {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for approval prompt")
-		default:
-			time.Sleep(50 * time.Millisecond)
-			for _, o := range outbound {
-				if strings.Contains(o.Content, "requires approval") {
-					// Extract approval ID from "approve:<id>"
-					idx := strings.Index(o.Content, "approve:")
-					if idx >= 0 {
-						rest := o.Content[idx+len("approve:"):]
-						// ID ends at space or newline
-						end := strings.IndexAny(rest, " \n\r")
-						if end < 0 {
-							approvalID = rest
-						} else {
-							approvalID = rest[:end]
-						}
-					}
-				}
-			}
-		}
-	}
+	approvalID := waitForApprovalPrompt(t, &outbound, 5*time.Second)
 
 	t.Logf("Got approval prompt, ID=%s", approvalID)
 
@@ -224,9 +251,9 @@ func TestApprovalFlowDenied(t *testing.T) {
 		MaxIterations: 5,
 	})
 
-	var outbound []*bus.OutboundMessage
+	var outbound outboundCapture
 	msgBus.Subscribe("whatsapp", func(msg *bus.OutboundMessage) {
-		outbound = append(outbound, msg)
+		outbound.add(msg)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -255,31 +282,7 @@ func TestApprovalFlowDenied(t *testing.T) {
 		close(done)
 	}()
 
-	// Wait for approval prompt
-	var approvalID string
-	deadline := time.After(5 * time.Second)
-	for approvalID == "" {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for approval prompt")
-		default:
-			time.Sleep(50 * time.Millisecond)
-			for _, o := range outbound {
-				if strings.Contains(o.Content, "requires approval") {
-					idx := strings.Index(o.Content, "approve:")
-					if idx >= 0 {
-						rest := o.Content[idx+len("approve:"):]
-						end := strings.IndexAny(rest, " \n\r")
-						if end < 0 {
-							approvalID = rest
-						} else {
-							approvalID = rest[:end]
-						}
-					}
-				}
-			}
-		}
-	}
+	approvalID := waitForApprovalPrompt(t, &outbound, 5*time.Second)
 
 	// Deny
 	if err := loop.approvalMgr.Respond(approvalID, false); err != nil {
@@ -434,9 +437,9 @@ func TestApprovalRunInterception(t *testing.T) {
 	id := loop.approvalMgr.Create(req)
 
 	// Capture outbound
-	var outbound []*bus.OutboundMessage
+	var outbound outboundCapture
 	msgBus.Subscribe("whatsapp", func(msg *bus.OutboundMessage) {
-		outbound = append(outbound, msg)
+		outbound.add(msg)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -444,7 +447,10 @@ func TestApprovalRunInterception(t *testing.T) {
 	go msgBus.DispatchOutbound(ctx)
 
 	// Start Run() in background
-	go loop.Run(ctx)
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- loop.Run(ctx)
+	}()
 
 	// Send the approval response via bus
 	msgBus.PublishInbound(&bus.InboundMessage{
@@ -455,20 +461,27 @@ func TestApprovalRunInterception(t *testing.T) {
 		Timestamp: time.Now(),
 	})
 
-	// Wait a bit for processing
-	time.Sleep(200 * time.Millisecond)
-
 	// Check outbound for confirmation message
 	var found bool
-	for _, o := range outbound {
-		if strings.Contains(o.Content, id) && strings.Contains(o.Content, "approved") {
-			found = true
+	deadline := time.Now().Add(2 * time.Second)
+	for !found && time.Now().Before(deadline) {
+		for _, o := range outbound.snapshot() {
+			if strings.Contains(o.Content, id) && strings.Contains(o.Content, "approved") {
+				found = true
+				break
+			}
 		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	if !found {
 		t.Error("expected outbound confirmation message for approval")
 	}
 
-	loop.Stop()
+	cancel()
+	select {
+	case <-runDone:
+	case <-time.After(1 * time.Second):
+		t.Fatal("Run() did not stop after context cancel")
+	}
 	t.Logf("Run() interception test passed for approval ID=%s", id)
 }

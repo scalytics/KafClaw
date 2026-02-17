@@ -5,12 +5,38 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/KafClaw/KafClaw/internal/bus"
 	"github.com/KafClaw/KafClaw/internal/config"
 )
+
+type producedStore struct {
+	mu    sync.Mutex
+	items []GroupEnvelope
+}
+
+func (s *producedStore) append(env GroupEnvelope) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.items = append(s.items, env)
+}
+
+func (s *producedStore) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.items = nil
+}
+
+func (s *producedStore) snapshot() []GroupEnvelope {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]GroupEnvelope, len(s.items))
+	copy(out, s.items)
+	return out
+}
 
 func newTestManagerForOnboard(serverURL string, agentID string, onboardMode string) *Manager {
 	cfg := config.GroupConfig{
@@ -33,12 +59,12 @@ func newTestManagerForOnboard(serverURL string, agentID string, onboardMode stri
 }
 
 func TestOnboard_OpenMode(t *testing.T) {
-	var produced []GroupEnvelope
+	var produced producedStore
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var env GroupEnvelope
 		json.NewDecoder(r.Body).Decode(&env)
-		produced = append(produced, env)
+		produced.append(env)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(LFSEnvelope{KfsLFS: 1})
 	}))
@@ -58,7 +84,7 @@ func TestOnboard_OpenMode(t *testing.T) {
 
 	// Verify the onboard request was produced
 	foundRequest := false
-	for _, env := range produced {
+	for _, env := range produced.snapshot() {
 		if env.Type == EnvelopeOnboard {
 			data, _ := json.Marshal(env.Payload)
 			var payload OnboardPayload
@@ -77,12 +103,12 @@ func TestOnboard_OpenMode(t *testing.T) {
 }
 
 func TestOnboard_HandleRequest_OpenMode(t *testing.T) {
-	var produced []GroupEnvelope
+	var produced producedStore
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var env GroupEnvelope
 		json.NewDecoder(r.Body).Decode(&env)
-		produced = append(produced, env)
+		produced.append(env)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(LFSEnvelope{KfsLFS: 1})
 	}))
@@ -117,12 +143,12 @@ func TestOnboard_HandleRequest_OpenMode(t *testing.T) {
 		Payload:       raw,
 	}
 
-	produced = nil // reset
+	produced.reset()
 	orch.HandleOnboard(env)
 
 	// In open mode, should produce OnboardComplete directly
 	foundComplete := false
-	for _, env := range produced {
+	for _, env := range produced.snapshot() {
 		if env.Type == EnvelopeOnboard {
 			data, _ := json.Marshal(env.Payload)
 			var payload OnboardPayload
@@ -147,12 +173,12 @@ func TestOnboard_HandleRequest_OpenMode(t *testing.T) {
 }
 
 func TestOnboard_HandleRequest_GatedMode(t *testing.T) {
-	var produced []GroupEnvelope
+	var produced producedStore
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var env GroupEnvelope
 		json.NewDecoder(r.Body).Decode(&env)
-		produced = append(produced, env)
+		produced.append(env)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(LFSEnvelope{KfsLFS: 1})
 	}))
@@ -182,12 +208,12 @@ func TestOnboard_HandleRequest_GatedMode(t *testing.T) {
 		Payload:       raw,
 	}
 
-	produced = nil
+	produced.reset()
 	orch.HandleOnboard(env)
 
 	// In gated mode, should produce OnboardChallenge (not Complete)
 	foundChallenge := false
-	for _, env := range produced {
+	for _, env := range produced.snapshot() {
 		if env.Type == EnvelopeOnboard {
 			data, _ := json.Marshal(env.Payload)
 			var payload OnboardPayload
@@ -206,12 +232,12 @@ func TestOnboard_HandleRequest_GatedMode(t *testing.T) {
 }
 
 func TestOnboard_HandleComplete(t *testing.T) {
-	var produced []GroupEnvelope
+	var produced producedStore
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var env GroupEnvelope
 		json.NewDecoder(r.Body).Decode(&env)
-		produced = append(produced, env)
+		produced.append(env)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(LFSEnvelope{KfsLFS: 1})
 	}))
@@ -296,12 +322,12 @@ func TestOnboard_HandleReject(t *testing.T) {
 }
 
 func TestOnboard_RouterIntegration(t *testing.T) {
-	var produced []GroupEnvelope
+	var produced producedStore
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var env GroupEnvelope
 		json.NewDecoder(r.Body).Decode(&env)
-		produced = append(produced, env)
+		produced.append(env)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(LFSEnvelope{KfsLFS: 1})
 	}))
@@ -343,7 +369,7 @@ func TestOnboard_RouterIntegration(t *testing.T) {
 	data, _ := json.Marshal(env)
 
 	ext := ExtendedTopics("test-group")
-	produced = nil
+	produced.reset()
 	consumer.Send(ConsumerMessage{
 		Topic: ext.ControlOnboarding,
 		Value: data,
@@ -353,7 +379,7 @@ func TestOnboard_RouterIntegration(t *testing.T) {
 
 	// Verify an OnboardComplete was produced
 	foundComplete := false
-	for _, env := range produced {
+	for _, env := range produced.snapshot() {
 		if env.Type == EnvelopeOnboard {
 			pData, _ := json.Marshal(env.Payload)
 			var payload OnboardPayload
