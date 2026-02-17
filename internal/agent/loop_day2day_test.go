@@ -139,9 +139,9 @@ func TestParseStatusDate(t *testing.T) {
 func TestDay2DayFlowAndStatus(t *testing.T) {
 	sysRepo := t.TempDir()
 	loop := NewLoop(LoopOptions{
-		Provider:  &mockProvider{},
-		Workspace: t.TempDir(),
-		WorkRepo:  t.TempDir(),
+		Provider:   &mockProvider{},
+		Workspace:  t.TempDir(),
+		WorkRepo:   t.TempDir(),
 		SystemRepo: sysRepo,
 	})
 
@@ -190,9 +190,9 @@ func TestDay2DayFlowAndStatus(t *testing.T) {
 func TestDay2DayCaptureFlow(t *testing.T) {
 	sysRepo := t.TempDir()
 	loop := NewLoop(LoopOptions{
-		Provider:  &mockProvider{},
-		Workspace: t.TempDir(),
-		WorkRepo:  t.TempDir(),
+		Provider:   &mockProvider{},
+		Workspace:  t.TempDir(),
+		WorkRepo:   t.TempDir(),
 		SystemRepo: sysRepo,
 	})
 	sess := session.NewSession("cli:default")
