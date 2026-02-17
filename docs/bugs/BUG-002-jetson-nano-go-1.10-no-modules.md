@@ -13,9 +13,9 @@
 ```
 kamir@jetson-nano-1:~/KafClaw/kafclaw$ sudo make dist-go
 GOOS=darwin  GOARCH=arm64 go build -o dist/kafclaw-darwin-arm64  ./cmd/kafclaw
-cmd/kafclaw/main.go:7:2: cannot find package "github.com/KafClaw/KafClaw/cmd/kafclaw/cmd" in any of:
-    /usr/lib/go-1.10/src/github.com/KafClaw/KafClaw/cmd/kafclaw/cmd (from $GOROOT)
-    /home/kamir/go/src/github.com/KafClaw/KafClaw/cmd/kafclaw/cmd (from $GOPATH)
+cmd/kafclaw/main.go:7:2: cannot find package "github.com/KafClaw/KafClaw/internal/cli" in any of:
+    /usr/lib/go-1.10/src/github.com/KafClaw/KafClaw/internal/cli (from $GOROOT)
+    /home/kamir/go/src/github.com/KafClaw/KafClaw/internal/cli (from $GOPATH)
 Makefile:144: recipe for target 'dist-go' failed
 make: *** [dist-go] Error 1
 ```

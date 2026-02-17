@@ -96,12 +96,15 @@ func TestGroupRouter_RouteTaskRequest(t *testing.T) {
 	router := NewGroupRouter(mgr, msgBus, consumer)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	// Start consuming inbound
-	var received *bus.InboundMessage
+	receivedCh := make(chan *bus.InboundMessage, 1)
 	go func() {
 		msg, _ := msgBus.ConsumeInbound(ctx)
-		received = msg
+		if msg != nil {
+			receivedCh <- msg
+		}
 	}()
 
 	go func() {
@@ -128,10 +131,10 @@ func TestGroupRouter_RouteTaskRequest(t *testing.T) {
 		Value: data,
 	})
 
-	// Wait for routing
-	time.Sleep(50 * time.Millisecond)
-
-	if received == nil {
+	var received *bus.InboundMessage
+	select {
+	case received = <-receivedCh:
+	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected inbound message on bus")
 	}
 	if received.Channel != "group" {
@@ -140,8 +143,6 @@ func TestGroupRouter_RouteTaskRequest(t *testing.T) {
 	if received.Content != "Please review this code" {
 		t.Errorf("unexpected content: %s", received.Content)
 	}
-
-	cancel()
 }
 
 func TestGroupRouter_SkipOwnMessages(t *testing.T) {

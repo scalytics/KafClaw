@@ -1,6 +1,7 @@
 # KafClaw
-[![CI](https://github.com/scalytics/KafClaw/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/scalytics/KafClaw/actions/workflows/ci.yml)
-[![Release](https://github.com/scalytics/KafClaw/actions/workflows/release.yml/badge.svg)](https://github.com/scalytics/KafClaw/actions/workflows/release.yml)
+[![CI](https://github.com/KafClaw/KafClaw/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/KafClaw/KafClaw/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/KafClaw/KafClaw/actions/workflows/235168059/badge.svg)](https://github.com/KafClaw/KafClaw/actions/workflows/235168059)
+[![Release](https://github.com/KafClaw/KafClaw/actions/workflows/release.yml/badge.svg)](https://github.com/KafClaw/KafClaw/actions/workflows/release.yml)
 
 **Enterprise-grade multi-agent collaboration over Apache Kafka.**
 

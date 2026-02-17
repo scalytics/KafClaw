@@ -107,7 +107,7 @@ test-orchestrator: ## Run orchestrator tests (verbose)
 	go test -v ./internal/orchestrator/
 
 build: check ## Build the kafclaw binary
-	go build ./cmd/kafclaw
+	go build -o kafclaw ./cmd/kafclaw
 
 install: build ## Install kafclaw to /usr/local/bin
 	cp kafclaw /usr/local/bin/kafclaw

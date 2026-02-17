@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"github.com/fatih/color"
@@ -7,7 +7,7 @@ import (
 
 var (
 	// version can be overridden at build time via:
-	// go build -ldflags "-X github.com/KafClaw/KafClaw/cmd/kafclaw/cmd.version=1.2.3"
+	// go build -ldflags "-X github.com/KafClaw/KafClaw/internal/cli.version=1.2.3"
 	version = "2.6.3"
 	logo    = "\n" +
 		"  _  __       __  ____ _\n" +
