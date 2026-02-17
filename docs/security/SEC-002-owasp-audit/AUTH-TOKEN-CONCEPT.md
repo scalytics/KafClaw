@@ -196,7 +196,7 @@ API keys are mapped to a scope profile and a bot identity. This maintains backwa
 ### Flow 4: CLI Authentication
 
 ```
-gomikrobot agent -m "hello" --identity alpha
+kafclaw agent -m "hello" --identity alpha
 
 1. CLI loads identity "alpha" from local store
 2. CLI generates JWT signed with alpha's private key
@@ -393,7 +393,7 @@ mux.Handle("/api/v1/repo/checkout",
 ### Server-Side (Gateway)
 
 ```sql
--- ~/.gomikrobot/auth.db
+-- ~/.kafclaw/auth.db
 
 CREATE TABLE api_keys (
     key_hash    TEXT PRIMARY KEY,     -- SHA-256 of the API key
@@ -528,7 +528,7 @@ function scheduleRefresh(expiresIn) {
 ## Configuration
 
 ```json
-// ~/.gomikrobot/config.json additions
+// ~/.kafclaw/config.json additions
 {
   "auth": {
     "method": "jwt",

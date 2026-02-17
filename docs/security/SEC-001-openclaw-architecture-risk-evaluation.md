@@ -29,7 +29,7 @@ Nine security domains were assessed by reading KafClaw source code, tracing exec
 |---|--------|---------------|----------------|
 | 1 | Shell execution controls | `internal/tools/shell.go` | LLM can execute arbitrary system commands |
 | 2 | Filesystem access boundaries | `internal/tools/filesystem.go` | LLM can read/write files on the host |
-| 3 | Gateway exposure | `cmd/gomikrobot/cmd/gateway.go`, `internal/config/` | Network-accessible control plane for the agent |
+| 3 | Gateway exposure | `cmd/kafclaw/cmd/gateway.go`, `internal/config/` | Network-accessible control plane for the agent |
 | 4 | RBAC and policy enforcement | `internal/policy/engine.go`, `internal/approval/manager.go` | Who can trigger which tools, and under what conditions |
 | 5 | Tool extensibility and sandboxing | `internal/tools/tool.go`, `internal/agent/loop.go` | Plugin system determines blast radius of new capabilities |
 | 6 | Session and memory persistence | `internal/session/session.go`, `internal/timeline/service.go` | Conversation logs may contain secrets |
@@ -102,7 +102,7 @@ KafClaw accepts input from multiple channels (CLI, WhatsApp, Web) with different
 **Component:** Session persistence layer
 
 **Description:**
-Session files are created using `os.Create(path)`, which applies the process umask — typically resulting in `0644` permissions (world-readable). All conversation content is stored as plaintext JSONL in `~/.gomikrobot/sessions/`. This includes any credentials, API keys, or sensitive data a user may share in conversation.
+Session files are created using `os.Create(path)`, which applies the process umask — typically resulting in `0644` permissions (world-readable). All conversation content is stored as plaintext JSONL in `~/.kafclaw/sessions/`. This includes any credentials, API keys, or sensitive data a user may share in conversation.
 
 **Evidence:**
 ```go
@@ -123,8 +123,8 @@ os.WriteFile(path, data, 0600)
 - On shared systems or containers with volume mounts, exposure extends beyond the host
 
 **Affected data:**
-- `~/.gomikrobot/sessions/*.jsonl` — full conversation history
-- `~/.gomikrobot/timeline.db` — event log with system prompts and tool arguments
+- `~/.kafclaw/sessions/*.jsonl` — full conversation history
+- `~/.kafclaw/timeline.db` — event log with system prompts and tool arguments
 
 ---
 
@@ -217,7 +217,7 @@ The strict allow-list mode (enabled by default) matches command patterns against
 #### F-05: Optional Gateway Authentication and Missing Rate Limiting
 
 **Severity:** MEDIUM
-**Location:** `cmd/gomikrobot/cmd/gateway.go`, `internal/config/`
+**Location:** `cmd/kafclaw/cmd/gateway.go`, `internal/config/`
 **Component:** HTTP gateway
 
 **Description:**
@@ -276,7 +276,7 @@ Before proposing fixes, it is important to acknowledge the controls that already
 | **Shell strict allow-list** | `StrictAllowList=true` default in `shell.go:111` | Mostly effective. Blocks unknown commands; bypass vectors exist but require sophistication |
 | **Workspace boundary enforcement** | `isWithin()` in `filesystem.go` | Mostly effective. Blocks direct path traversal; symlink edge case exists |
 | **Localhost-only binding** | `127.0.0.1` default for gateway | Effective for single-user desktop use |
-| **Config file permissions** | `0600` for `~/.gomikrobot/config.json` | Effective. API keys in config are protected |
+| **Config file permissions** | `0600` for `~/.kafclaw/config.json` | Effective. API keys in config are protected |
 | **No browser automation** | Not implemented | Eliminates entire attack surface category |
 | **Deny-pattern shell filtering** | 24 regex patterns for destructive commands | Defense-in-depth layer. Not sufficient alone but adds friction |
 
@@ -317,7 +317,7 @@ file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 ```
 
 **Additionally:**
-- Set `~/.gomikrobot/sessions/` directory permissions to `0700` during initialization
+- Set `~/.kafclaw/sessions/` directory permissions to `0700` during initialization
 - Set timeline database file permissions to `0600` after creation
 - Add a startup check that warns if existing session files have overly permissive modes
 
@@ -436,7 +436,7 @@ Use `mvdan.cc/sh/v3/syntax` to parse commands into an AST and validate that:
 
 **Change:** Generate a default auth token and add rate limiting.
 
-**Where:** `internal/config/loader.go`, `cmd/gomikrobot/cmd/gateway.go`
+**Where:** `internal/config/loader.go`, `cmd/kafclaw/cmd/gateway.go`
 
 **Proposed:**
 1. On first run, if `Gateway.AuthToken` is empty, generate a random 32-byte hex token, save it to config, and print it to stdout once

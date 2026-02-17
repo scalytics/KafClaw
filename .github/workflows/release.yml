@@ -35,29 +35,29 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.13"
-          cache-dependency-path: gomikrobot/go.sum
+          cache-dependency-path: go.sum
 
       - name: Extract version from tag
         id: version
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
       - name: Build
-        working-directory: gomikrobot
+        working-directory: .
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
-          BIN_NAME="gomikrobot-${{ matrix.goos }}-${{ matrix.goarch }}"
-          go build -ldflags "-X github.com/KafClaw/KafClaw/gomikrobot/cmd/gomikrobot/cmd.version=${{ steps.version.outputs.tag }}" \
-            -o "dist/${BIN_NAME}" ./cmd/gomikrobot
+          BIN_NAME="kafclaw-${{ matrix.goos }}-${{ matrix.goarch }}"
+          go build -ldflags "-X github.com/KafClaw/KafClaw/cmd/kafclaw/cmd.version=${{ steps.version.outputs.tag }}" \
+            -o "dist/${BIN_NAME}" ./cmd/kafclaw
           chmod +x "dist/${BIN_NAME}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gomikrobot-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: gomikrobot/dist/*
+          name: kafclaw-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
 
   # -------------------------------------------------------------------
   # Job 2: Package Electron desktop app (needs native runners)
@@ -84,7 +84,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.13"
-          cache-dependency-path: gomikrobot/go.sum
+          cache-dependency-path: go.sum
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -92,25 +92,25 @@ jobs:
           node-version: "20"
 
       - name: Build Go binary for target platform
-        working-directory: gomikrobot
+        working-directory: .
         env:
           GOOS: ${{ matrix.go_goos }}
           GOARCH: ${{ matrix.go_goarch }}
           CGO_ENABLED: "0"
         run: |
-          go build -o gomikrobot ./cmd/gomikrobot
-          chmod +x gomikrobot
+          go build -o kafclaw ./cmd/kafclaw
+          chmod +x kafclaw
 
       - name: Install Electron dependencies
-        working-directory: gomikrobot/electron
+        working-directory: electron
         run: npm ci
 
       - name: Build Electron app
-        working-directory: gomikrobot/electron
+        working-directory: electron
         run: npm run build
 
       - name: Package Electron app
-        working-directory: gomikrobot/electron
+        working-directory: electron
         run: npx electron-builder --${{ matrix.platform }} --publish never
 
       - name: Upload Electron artifacts
@@ -118,8 +118,8 @@ jobs:
         with:
           name: electron-${{ matrix.platform }}
           path: |
-            gomikrobot/electron/release/*.dmg
-            gomikrobot/electron/release/*.AppImage
+            electron/release/*.dmg
+            electron/release/*.AppImage
 
   # -------------------------------------------------------------------
   # Job 3: Publish GitHub Release with all artifacts
@@ -138,7 +138,7 @@ jobs:
         run: |
           mkdir -p release_files
           # Flatten Go binaries
-          find artifacts -name "gomikrobot-*" -type f -exec cp {} release_files/ \;
+          find artifacts -name "kafclaw-*" -type f -exec cp {} release_files/ \;
           # Flatten Electron packages
           find artifacts -name "*.dmg" -type f -exec cp {} release_files/ \;
           find artifacts -name "*.AppImage" -type f -exec cp {} release_files/ \;

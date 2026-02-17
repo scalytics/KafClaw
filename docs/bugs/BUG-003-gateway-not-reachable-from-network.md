@@ -53,7 +53,7 @@ Then access: `http://192.168.0.199:18791/` (note: `http`, not `https`).
 MIKROBOT_GATEWAY_HOST=0.0.0.0 make run
 ```
 
-Or set in `~/.gomikrobot/config.json`:
+Or set in `~/.kafclaw/config.json`:
 
 ```json
 {

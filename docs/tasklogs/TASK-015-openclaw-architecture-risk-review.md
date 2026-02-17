@@ -35,16 +35,16 @@ The review praised several patterns that KafClaw also implements:
 
 **KafClaw status: VULNERABLE**
 
-Session files are written via `os.Create()` (`internal/session/session.go:162`) which uses the OS default umask — typically `0644`, meaning any local user can read them. All conversation content, including any API keys or credentials a user pastes into chat, is stored as plaintext JSONL in `~/.gomikrobot/sessions/`.
+Session files are written via `os.Create()` (`internal/session/session.go:162`) which uses the OS default umask — typically `0644`, meaning any local user can read them. All conversation content, including any API keys or credentials a user pastes into chat, is stored as plaintext JSONL in `~/.kafclaw/sessions/`.
 
-The timeline database (`~/.gomikrobot/timeline.db`) stores:
+The timeline database (`~/.kafclaw/timeline.db`) stores:
 - Full system prompt text (truncated to 2048 chars)
 - Tool call arguments (which may contain secrets passed to `exec`)
 - LLM response text
 
 There is **no encryption at rest**, **no secret redaction/masking**, and **no scrubbing before persistence**. The config file gets `0600` permissions, but sessions do not.
 
-**Blast radius:** Anyone with read access to `~/.gomikrobot/` can extract API keys, conversation history, and system prompts.
+**Blast radius:** Anyone with read access to `~/.kafclaw/` can extract API keys, conversation history, and system prompts.
 
 **What to fix:**
 - Set session file permissions to `0600` via `os.OpenFile()` with explicit mode

@@ -11,11 +11,11 @@
 ## Symptoms
 
 ```
-kamir@jetson-nano-1:~/KafClaw/gomikrobot$ sudo make dist-go
-GOOS=darwin  GOARCH=arm64 go build -o dist/gomikrobot-darwin-arm64  ./cmd/gomikrobot
-cmd/gomikrobot/main.go:7:2: cannot find package "github.com/KafClaw/KafClaw/gomikrobot/cmd/gomikrobot/cmd" in any of:
-    /usr/lib/go-1.10/src/github.com/KafClaw/KafClaw/gomikrobot/cmd/gomikrobot/cmd (from $GOROOT)
-    /home/kamir/go/src/github.com/KafClaw/KafClaw/gomikrobot/cmd/gomikrobot/cmd (from $GOPATH)
+kamir@jetson-nano-1:~/KafClaw/kafclaw$ sudo make dist-go
+GOOS=darwin  GOARCH=arm64 go build -o dist/kafclaw-darwin-arm64  ./cmd/kafclaw
+cmd/kafclaw/main.go:7:2: cannot find package "github.com/KafClaw/KafClaw/cmd/kafclaw/cmd" in any of:
+    /usr/lib/go-1.10/src/github.com/KafClaw/KafClaw/cmd/kafclaw/cmd (from $GOROOT)
+    /home/kamir/go/src/github.com/KafClaw/KafClaw/cmd/kafclaw/cmd (from $GOPATH)
 Makefile:144: recipe for target 'dist-go' failed
 make: *** [dist-go] Error 1
 ```
@@ -64,7 +64,7 @@ Ubuntu 18.04 (Bionic) — the base OS for Jetson Nano L4T — ships Go 1.10 via 
 3. **Cross-compile from macOS** (workaround):
    ```bash
    # On macOS dev machine:
-   GOOS=linux GOARCH=arm64 go build -o dist/gomikrobot-linux-arm64 ./cmd/gomikrobot
+   GOOS=linux GOARCH=arm64 go build -o dist/kafclaw-linux-arm64 ./cmd/kafclaw
    # Then scp to Jetson Nano
    ```
    - No Go needed on the Nano at all for running the binary
@@ -72,7 +72,7 @@ Ubuntu 18.04 (Bionic) — the base OS for Jetson Nano L4T — ships Go 1.10 via 
 
 4. **Docker build on Nano** (if Docker is available):
    ```bash
-   docker run --rm -v $(pwd):/src -w /src golang:1.24 go build ./cmd/gomikrobot
+   docker run --rm -v $(pwd):/src -w /src golang:1.24 go build ./cmd/kafclaw
    ```
 
 ## Fix Plan

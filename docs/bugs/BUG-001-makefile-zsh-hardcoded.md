@@ -9,7 +9,7 @@
 ## Symptoms
 
 ```
-kamir@jetson-nano-1:~/KafClaw/gomikrobot$ make
+kamir@jetson-nano-1:~/KafClaw/kafclaw$ make
 make: /bin/zsh: Command not found
 Makefile:13: recipe for target 'help' failed
 make: *** [help] Error 127
@@ -17,7 +17,7 @@ make: *** [help] Error 127
 
 ## Root Cause
 
-Three issues in `gomikrobot/Makefile`:
+Three issues in `kafclaw/Makefile`:
 
 ### 1. Hardcoded zsh (line 1)
 
@@ -50,7 +50,7 @@ kill-gateway:
 
 ### 4. Missing ARM64 Linux in dist-go
 
-The `dist-go` target builds `linux/arm64` already, so this is fine. But the binary name is still `gomikrobot` — should be `kafclaw` post-rebrand (separate issue).
+The `dist-go` target builds `linux/arm64` already, so this is fine. But the binary name is still `kafclaw` — should be `kafclaw` post-rebrand (separate issue).
 
 ## Impact
 
@@ -66,10 +66,10 @@ See TASK-001 below.
 
 | File | Lines | Issue |
 |------|-------|-------|
-| `gomikrobot/Makefile` | 1 | `SHELL := /bin/zsh` |
-| `gomikrobot/Makefile` | 3 | `SOURCE_ENV` sources `.zshrc` |
-| `gomikrobot/Makefile` | 69-82 | `[[ ]]` and `pipefail` |
-| `gomikrobot/Makefile` | 40,43,47,52,62 | `$(SOURCE_ENV)` usage in run targets |
+| `kafclaw/Makefile` | 1 | `SHELL := /bin/zsh` |
+| `kafclaw/Makefile` | 3 | `SOURCE_ENV` sources `.zshrc` |
+| `kafclaw/Makefile` | 69-82 | `[[ ]]` and `pipefail` |
+| `kafclaw/Makefile` | 40,43,47,52,62 | `$(SOURCE_ENV)` usage in run targets |
 
 ## Workaround
 

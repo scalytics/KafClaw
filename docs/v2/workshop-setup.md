@@ -50,7 +50,7 @@ This is the same architecture as the production KafScale platform, but with a lo
 ## Quick Start
 
 ```bash
-cd gomikrobot
+cd KafClaw
 
 # Interactive setup — creates .env, builds image, starts stack
 make workshop-setup
@@ -111,7 +111,7 @@ Customize these before starting the stack.
 
 ## Desktop Agent (Electron / CLI)
 
-The Mac runs as the 4th agent and orchestrator. Configure group settings in `~/.gomikrobot/config.json`:
+The Mac runs as the 4th agent and orchestrator. Configure group settings in `~/.kafclaw/config.json`:
 
 ```json
 {
@@ -152,7 +152,7 @@ make workshop-ps     # Container status
 2. **etcd** stores KafScale broker metadata and service discovery.
 3. **KafScale broker** provides Kafka-compatible messaging. All agents produce via LFS Proxy HTTP API and consume directly from the broker.
 4. **KafScale LFS Proxy** bridges HTTP produce requests to the broker and handles large file storage in S3.
-5. **Headless agents** run `gomikrobot gateway` in Docker with `MIKROBOT_GATEWAY_HOST=0.0.0.0`. Their ports are not exposed to the host — they communicate only via KafScale.
+5. **Headless agents** run `kafclaw gateway` in Docker with `MIKROBOT_GATEWAY_HOST=0.0.0.0`. Their ports are not exposed to the host — they communicate only via KafScale.
 6. **The desktop agent** exposes ports 18790 (API) and 18791 (dashboard) and owns the WhatsApp channel.
 7. On startup, each agent auto-scaffolds its workspace (soul files) if missing, and auto-joins the group specified in its config.
 

@@ -70,7 +70,7 @@ OpenClaw (first commit November 2025) has experienced significant security incid
 
 | Area | Current State | Risk Level |
 |------|--------------|------------|
-| **Credential encryption at rest** | Plain JSON in `~/.gomikrobot/config.json`, plaintext SQLite databases | **Critical** |
+| **Credential encryption at rest** | Plain JSON in `~/.kafclaw/config.json`, plaintext SQLite databases | **Critical** |
 | **CORS policy** | Hardcoded `Access-Control-Allow-Origin: *` on all 10+ API endpoints | **Critical** |
 | **Database encryption** | `timeline.db`, `whatsapp.db`, session JSONL files all unencrypted | **High** |
 | **Process sandboxing** | No container isolation or seccomp profiles for tool execution | **High** |
@@ -114,7 +114,7 @@ These items have high security impact, low implementation complexity, and no arc
 
 **Fix:** Replace wildcard with explicit origin allowlist.
 
-**Files:** `gomikrobot/cmd/gomikrobot/cmd/gateway.go` (10 instances)
+**Files:** `cmd/kafclaw/cmd/gateway.go` (10 instances)
 
 **Implementation:**
 ```go
@@ -145,7 +145,7 @@ func setCORSHeaders(w http.ResponseWriter, r *http.Request, allowed []string) {
 
 **Fix — Phase 1 (config file):** Encrypt sensitive fields in `config.json` using AES-256-GCM with a key derived from a user-supplied passphrase (or machine-specific key).
 
-**Files:** `gomikrobot/internal/config/loader.go`, new `gomikrobot/internal/config/crypto.go`
+**Files:** `internal/config/loader.go`, new `internal/config/crypto.go`
 
 **Implementation sketch:**
 ```go
@@ -213,7 +213,7 @@ w.Header().Set("Content-Security-Policy",
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'")
 ```
 
-**Files:** `gomikrobot/cmd/gomikrobot/cmd/gateway.go` (dashboard server section)
+**Files:** `cmd/kafclaw/cmd/gateway.go` (dashboard server section)
 
 ### 4.4 Add Rate Limiting to Gateway (MEDIUM)
 
@@ -232,7 +232,7 @@ limiter := rate.NewLimiter(rate.Every(time.Second), 10) // 10 req/s burst
 
 **Fix:** When `Host != "127.0.0.1"` and TLS is not configured, log a prominent warning and optionally refuse to start (configurable `RequireTLS` flag).
 
-**Files:** `gomikrobot/cmd/gomikrobot/cmd/gateway.go`
+**Files:** `cmd/kafclaw/cmd/gateway.go`
 
 ---
 
@@ -489,26 +489,26 @@ Based on commit timestamps and release cadence:
 
 | File | What It Controls |
 |------|-----------------|
-| `gomikrobot/cmd/gomikrobot/cmd/gateway.go` | All API endpoints, CORS headers, auth middleware, TLS config |
-| `gomikrobot/internal/tools/shell.go` | Shell execution sandbox (deny/allow patterns, path traversal, timeout) |
-| `gomikrobot/internal/tools/filesystem.go` | Path traversal protection, workspace boundary enforcement |
-| `gomikrobot/internal/policy/engine.go` | 3-tier tool authorization, sender classification |
-| `gomikrobot/internal/config/loader.go` | Config file loading, file permissions (0600/0700) |
-| `gomikrobot/internal/config/config.go` | All config fields, default values, gateway binding address |
-| `gomikrobot/internal/approval/manager.go` | Interactive approval workflow for high-tier tools |
-| `gomikrobot/internal/session/session.go` | JSONL session persistence (currently plaintext) |
-| `gomikrobot/internal/timeline/service.go` | SQLite database connection, schema, WAL mode |
-| `gomikrobot/internal/channels/whatsapp.go` | WhatsApp auth, allowlist/denylist, JID normalization |
-| `gomikrobot/internal/agent/loop.go` | Agent loop, tool registration, message classification |
-| `gomikrobot/internal/agent/context.go` | Context builder, soul file loading, identity envelope |
-| `gomikrobot/internal/memory/service.go` | Memory storage (embeddings, content — currently plaintext) |
+| `cmd/kafclaw/cmd/gateway.go` | All API endpoints, CORS headers, auth middleware, TLS config |
+| `internal/tools/shell.go` | Shell execution sandbox (deny/allow patterns, path traversal, timeout) |
+| `internal/tools/filesystem.go` | Path traversal protection, workspace boundary enforcement |
+| `internal/policy/engine.go` | 3-tier tool authorization, sender classification |
+| `internal/config/loader.go` | Config file loading, file permissions (0600/0700) |
+| `internal/config/config.go` | All config fields, default values, gateway binding address |
+| `internal/approval/manager.go` | Interactive approval workflow for high-tier tools |
+| `internal/session/session.go` | JSONL session persistence (currently plaintext) |
+| `internal/timeline/service.go` | SQLite database connection, schema, WAL mode |
+| `internal/channels/whatsapp.go` | WhatsApp auth, allowlist/denylist, JID normalization |
+| `internal/agent/loop.go` | Agent loop, tool registration, message classification |
+| `internal/agent/context.go` | Context builder, soul file loading, identity envelope |
+| `internal/memory/service.go` | Memory storage (embeddings, content — currently plaintext) |
 
 ### Existing Security Documentation
 
 | Document | Location |
 |---------|----------|
 | Security risks assessment | `docs/v2/security-risks.md` |
-| Architecture (security model section) | `gomikrobot/ARCHITECTURE.md` §9 |
+| Architecture (security model section) | `kafclaw/ARCHITECTURE.md` §9 |
 | Admin guide (gateway auth) | `docs/v2/admin-guide.md` |
 | WhatsApp authorization model | `docs/v2/whatsapp-setup.md` |
 | **This roadmap** | `docs/security/security-roadmap.md` |

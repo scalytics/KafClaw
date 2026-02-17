@@ -1,7 +1,7 @@
 # Electron App Security Audit - KafClaw
 
 **Date:** 2026-02-16
-**Scope:** Electron desktop application (`gomikrobot/electron/`)
+**Scope:** Electron desktop application (`electron/`)
 **Standard:** Electron Security Checklist, OWASP Desktop App Guidelines
 **Assessment:** MEDIUM risk (strong fundamentals, one critical TLS issue)
 
@@ -21,7 +21,7 @@ Electron Main Process
   |-- Preload Script (contextBridge: whitelist-only API)
   |-- Sidecar Manager (Go binary spawned as child process)
   |-- Remote Client (HTTP/HTTPS to remote agents)
-  |-- Mode Resolver (config: ~/.gomikrobot/electron.json)
+  |-- Mode Resolver (config: ~/.kafclaw/electron.json)
 ```
 
 ---

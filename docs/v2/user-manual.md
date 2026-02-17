@@ -31,14 +31,14 @@ A comprehensive guide to installing, configuring, and using KafClaw — a person
 Build from source:
 
 ```bash
-cd kafclaw
+cd KafClaw
 go build ./cmd/kafclaw
 ```
 
 Or use the Makefile:
 
 ```bash
-cd kafclaw
+cd KafClaw
 make build
 ```
 
@@ -74,7 +74,7 @@ kafclaw status
 
 ```bash
 # 1. Build
-cd kafclaw && make build
+cd KafClaw && make build
 
 # 2. Initialize
 kafclaw onboard
