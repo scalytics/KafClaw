@@ -1579,7 +1579,6 @@ func TestValidateMediaDownloadURL(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "allow slack host", raw: "https://files.slack.com/path/file.bin"},
-		{name: "allow microsoft host", raw: "https://tenant.sharepoint.com/file"},
 		{name: "reject non-https", raw: "http://files.slack.com/path/file.bin", wantErr: true},
 		{name: "reject unknown host", raw: "https://example.com/file.bin", wantErr: true},
 		{name: "reject userinfo", raw: "https://user:pass@files.slack.com/file.bin", wantErr: true},

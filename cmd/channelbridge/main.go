@@ -2747,22 +2747,8 @@ func validateMediaDownloadURL(raw string) (string, error) {
 }
 
 func isAllowedMediaHost(host string) bool {
-	switch {
-	case host == "files.slack.com":
-		return true
-	case strings.HasSuffix(host, ".slack.com"):
-		return true
-	case strings.HasSuffix(host, ".microsoft.com"):
-		return true
-	case strings.HasSuffix(host, ".microsoftusercontent.com"):
-		return true
-	case strings.HasSuffix(host, ".teams.microsoft.com"):
-		return true
-	case strings.HasSuffix(host, ".sharepoint.com"):
-		return true
-	default:
-		return false
-	}
+	// Strict host allowlist for media download path to avoid uncontrolled egress.
+	return host == "files.slack.com"
 }
 
 func jwkToRSAPublicKey(nB64, eB64 string) (*rsa.PublicKey, error) {
