@@ -30,13 +30,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "latest"
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+      - name: Build (Go)
+        if: matrix.language == 'go'
+        run: go build ./...
+
+      - name: Build (JavaScript/TypeScript)
+        if: matrix.language == 'javascript-typescript'
+        run: ./scripts/codeql_js_build.sh
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
