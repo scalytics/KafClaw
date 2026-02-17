@@ -218,10 +218,10 @@ func TestGroupTraceAdapterPublishers(t *testing.T) {
 
 type dummyConsumer struct{}
 
-func (dummyConsumer) Start(context.Context) error                 { return nil }
-func (dummyConsumer) Messages() <-chan group.ConsumerMessage      { return make(chan group.ConsumerMessage) }
-func (dummyConsumer) Subscribe(string) error                      { return nil }
-func (dummyConsumer) Close() error                                { return nil }
+func (dummyConsumer) Start(context.Context) error            { return nil }
+func (dummyConsumer) Messages() <-chan group.ConsumerMessage { return make(chan group.ConsumerMessage) }
+func (dummyConsumer) Subscribe(string) error                 { return nil }
+func (dummyConsumer) Close() error                           { return nil }
 
 func newActiveGroupManagerForGatewayTest(t *testing.T) *group.Manager {
 	t.Helper()

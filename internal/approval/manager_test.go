@@ -1,8 +1,8 @@
 package approval
 
 import (
-	"crypto/rand"
 	"context"
+	"crypto/rand"
 	"io"
 	"path/filepath"
 	"testing"

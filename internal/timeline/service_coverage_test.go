@@ -79,14 +79,14 @@ func TestTimelineCoreMethodsCoverage(t *testing.T) {
 	}
 
 	if err := svc.LogPolicyDecision(&PolicyDecisionRecord{
-		TraceID:  "trace-core",
-		TaskID:   task.TaskID,
-		Tool:     "shell",
-		Tier:     2,
-		Sender:   "u1",
-		Channel:  "whatsapp",
-		Allowed:  true,
-		Reason:   "ok",
+		TraceID: "trace-core",
+		TaskID:  task.TaskID,
+		Tool:    "shell",
+		Tier:    2,
+		Sender:  "u1",
+		Channel: "whatsapp",
+		Allowed: true,
+		Reason:  "ok",
 	}); err != nil {
 		t.Fatalf("log policy decision: %v", err)
 	}

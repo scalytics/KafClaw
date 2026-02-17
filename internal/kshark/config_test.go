@@ -43,7 +43,7 @@ func TestTLSConfigFromPropsBranches(t *testing.T) {
 
 	_, _, err = TLSConfigFromProps(map[string]string{
 		"security.protocol": "SASL_SSL",
-		"ssl.ca.location":  "/does/not/exist.pem",
+		"ssl.ca.location":   "/does/not/exist.pem",
 	}, "localhost")
 	if err == nil {
 		t.Fatal("expected CA load error")
@@ -53,9 +53,9 @@ func TestTLSConfigFromPropsBranches(t *testing.T) {
 func TestSASLFromPropsAndDialers(t *testing.T) {
 	kind, kv, err := SASLFromProps(map[string]string{
 		"security.protocol": "SASL_SSL",
-		"sasl.mechanism":   "PLAIN",
-		"sasl.username":    "u",
-		"sasl.password":    "p",
+		"sasl.mechanism":    "PLAIN",
+		"sasl.username":     "u",
+		"sasl.password":     "p",
 	})
 	if err != nil || kind != AuthPLAIN || kv["username"] != "u" {
 		t.Fatalf("unexpected sasl plain parse: kind=%v kv=%v err=%v", kind, kv, err)
@@ -75,9 +75,9 @@ func TestSASLFromPropsAndDialers(t *testing.T) {
 
 	tr, err := TransportFromProps(map[string]string{
 		"security.protocol": "SASL_SSL",
-		"sasl.mechanism":   "PLAIN",
-		"sasl.username":    "u",
-		"sasl.password":    "p",
+		"sasl.mechanism":    "PLAIN",
+		"sasl.username":     "u",
+		"sasl.password":     "p",
 	}, 2*time.Second)
 	if err != nil || tr == nil {
 		t.Fatalf("unexpected transport: %v %v", tr, err)
@@ -86,10 +86,10 @@ func TestSASLFromPropsAndDialers(t *testing.T) {
 
 func TestRedactProps(t *testing.T) {
 	in := map[string]string{
-		"sasl.password":         "secret",
-		"basic.auth.user.info":  "a:b",
-		"public":                "ok",
-		"ssl.key.location":      "/tmp/key.pem",
+		"sasl.password":          "secret",
+		"basic.auth.user.info":   "a:b",
+		"public":                 "ok",
+		"ssl.key.location":       "/tmp/key.pem",
 		"sasl.oauthbearer.token": "tok",
 	}
 	out := RedactProps(in)
