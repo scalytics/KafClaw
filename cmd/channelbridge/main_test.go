@@ -1588,15 +1588,18 @@ func TestValidateMediaDownloadURL(t *testing.T) {
 			got, err := validateMediaDownloadURL(tt.raw)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("expected error for %q, got url=%q", tt.raw, got)
+					t.Fatalf("expected error for %q, got url=%v", tt.raw, got)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("unexpected error for %q: %v", tt.raw, err)
 			}
-			if strings.TrimSpace(got) == "" {
+			if got == nil || strings.TrimSpace(got.String()) == "" {
 				t.Fatalf("expected normalized URL for %q", tt.raw)
+			}
+			if got.Host != "files.slack.com" {
+				t.Fatalf("expected normalized host files.slack.com, got %q", got.Host)
 			}
 		})
 	}

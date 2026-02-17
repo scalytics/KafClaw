@@ -2702,10 +2702,12 @@ func (b *bridge) downloadMedia(mediaURL string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	req, err := http.NewRequest(http.MethodGet, parsed, nil)
+	req, err := http.NewRequest(http.MethodGet, "https://files.slack.com/", nil)
 	if err != nil {
 		return nil, "", err
 	}
+	req.URL.Path = parsed.Path
+	req.URL.RawQuery = parsed.RawQuery
 	resp, err := b.client.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -2725,25 +2727,32 @@ func (b *bridge) downloadMedia(mediaURL string) ([]byte, string, error) {
 	return data, name, nil
 }
 
-func validateMediaDownloadURL(raw string) (string, error) {
+func validateMediaDownloadURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return "", fmt.Errorf("invalid media url: %w", err)
+		return nil, fmt.Errorf("invalid media url: %w", err)
 	}
 	if !strings.EqualFold(strings.TrimSpace(u.Scheme), "https") {
-		return "", errors.New("media url must use https")
+		return nil, errors.New("media url must use https")
 	}
 	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
 	if host == "" {
-		return "", errors.New("media url host is missing")
+		return nil, errors.New("media url host is missing")
 	}
 	if !isAllowedMediaHost(host) {
-		return "", fmt.Errorf("media url host not allowed: %s", host)
+		return nil, fmt.Errorf("media url host not allowed: %s", host)
 	}
 	if strings.TrimSpace(u.User.String()) != "" {
-		return "", errors.New("media url user info is not allowed")
+		return nil, errors.New("media url user info is not allowed")
 	}
-	return u.String(), nil
+	if strings.Contains(u.Path, "..") {
+		return nil, errors.New("media url path is invalid")
+	}
+	u.Scheme = "https"
+	u.Host = "files.slack.com"
+	u.User = nil
+	u.Fragment = ""
+	return u, nil
 }
 
 func isAllowedMediaHost(host string) bool {
