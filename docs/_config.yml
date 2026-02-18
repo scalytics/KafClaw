@@ -6,6 +6,16 @@ plugins:
 markdown: kramdown
 kramdown:
   input: GFM
+defaults:
+  - scope:
+      path: ""
+      type: "pages"
+    values:
+      layout: "default"
+  - scope:
+      path: "index.md"
+    values:
+      layout: "home"
 search_enabled: true
 heading_anchors: true
 back_to_top: true
