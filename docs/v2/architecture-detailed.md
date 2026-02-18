@@ -1,7 +1,5 @@
 # KafClaw System Architecture — Detailed Reference
 
-{% include topnav.html %}
-
 > For the quick overview, see [architecture.md](./architecture.md).
 > See also: [FR-009 System Architecture](../requirements/FR-009-system-architecture.md), [FR-013 Package Design](../requirements/FR-013-package-design.md), [FR-018 Interface Contracts](../requirements/FR-018-interface-contracts.md)
 

@@ -1,7 +1,5 @@
 # KafClaw Architecture — Overview
 
-{% include topnav.html %}
-
 A quick reference for the KafClaw system architecture. For the comprehensive deep-dive, see [architecture-detailed.md](./architecture-detailed.md).
 
 > See also: [FR-009 System Architecture](../requirements/FR-009-system-architecture.md), [FR-013 Package Design](../requirements/FR-013-package-design.md)
