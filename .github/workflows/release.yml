@@ -136,6 +136,10 @@ jobs:
           go-version: "1.24.13"
           cache-dependency-path: go.sum
 
+      - name: Validate bundled skills artifacts
+        shell: bash
+        run: bash scripts/check_bundled_skills.sh
+
       - name: Build hardened binary
         shell: bash
         env:
@@ -174,9 +178,11 @@ jobs:
           set -euo pipefail
           BIN_NAME="kafclaw-${{ matrix.artifact_suffix }}${{ matrix.ext }}"
           BUNDLE_DIR="dist/kafclaw-${{ matrix.artifact_suffix }}-bundle"
-          mkdir -p "$BUNDLE_DIR/bin" "$BUNDLE_DIR/systemd" "$BUNDLE_DIR/env"
+          mkdir -p "$BUNDLE_DIR/bin" "$BUNDLE_DIR/systemd" "$BUNDLE_DIR/env" "$BUNDLE_DIR/skills" "$BUNDLE_DIR/docs/skills"
 
           cp "dist/${BIN_NAME}" "$BUNDLE_DIR/bin/kafclaw"
+          cp -R skills/. "$BUNDLE_DIR/skills/"
+          cp -R docs/skills/. "$BUNDLE_DIR/docs/skills/"
 
           cat > "$BUNDLE_DIR/systemd/kafclaw.service" <<'UNIT'
           [Unit]
@@ -226,6 +232,10 @@ jobs:
           chmod +x "$BUNDLE_DIR/install.sh"
 
           tar -C dist -czf "dist/kafclaw-${{ matrix.artifact_suffix }}-bundle.tar.gz" "kafclaw-${{ matrix.artifact_suffix }}-bundle"
+
+          if [[ "${{ matrix.goarch }}" == "amd64" ]]; then
+            tar -czf "dist/kafclaw-skills-bundle.tar.gz" skills docs/skills
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

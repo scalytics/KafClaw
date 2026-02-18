@@ -10,7 +10,7 @@ NPM_MIN_VERSION := 11
 HOST_GOMODCACHE := $(shell go env GOMODCACHE)
 HOST_GOCACHE := $(shell go env GOCACHE)
 
-.PHONY: help check bootstrap build run rerun test vet race commit-check test-smoke test-critical test-fuzz code-ql test-classification test-subagents-e2e install \
+.PHONY: help check bootstrap build run rerun test vet race commit-check test-smoke test-critical test-fuzz code-ql test-classification test-subagents-e2e check-bundled-skills install \
 	release release-major release-minor release-patch dist-go \
 	docker-build docker-up docker-down docker-logs \
 	run-standalone run-full run-headless \
@@ -110,6 +110,9 @@ race: ## Run race-enabled tests across all packages
 
 test-smoke: ## Run fast critical-path smoke tests (bug-finding first)
 	bash scripts/test_smoke.sh
+
+check-bundled-skills: ## Validate that bundled skills/docs artifacts exist
+	bash scripts/check_bundled_skills.sh
 
 test-critical: ## Enforce 100% coverage on critical logic
 	bash scripts/check_critical_coverage.sh
