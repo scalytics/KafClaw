@@ -104,6 +104,11 @@ kafclaw security fix --yes
 - `kafclaw skills auth start <provider> ...`
 - `kafclaw skills auth complete <provider> --callback-url ...`
 
+Agent tool names for OAuth-enrolled read-only access:
+
+- `google_workspace_read` (`gmail_list_messages`, `calendar_list_events`, `drive_list_files`)
+- `m365_read` (`mail_list_messages`, `calendar_list_events`, `onedrive_list_children`)
+
 ## Remediation
 
 - Missing `node`: install Node.js and rerun `kafclaw skills enable`

@@ -51,6 +51,9 @@ kafclaw skills auth complete google-workspace \
 - Start flow, open returned URL in a browser, approve scopes, and paste callback URL.
 - Keep scopes minimal and aligned with tenant policy.
 - OAuth flow start/complete events are recorded in chained security audit logs (see [Skills](./index.md)).
+- Agent read-only tool:
+  - `google_workspace_read` with `operation=gmail_list_messages|calendar_list_events|drive_list_files`
+  - include Gmail/Calendar/Drive read scopes during `auth start` for the operation you need.
 
 ## Troubleshooting
 

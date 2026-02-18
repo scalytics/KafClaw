@@ -200,6 +200,8 @@ func (l *Loop) registerDefaultTools() {
 	l.registry.Register(tools.NewSessionsSpawnTool(l.spawnSubagentFromTool))
 	l.registry.Register(tools.NewSubagentsTool(l.listSubagentsForTool, l.killSubagentForTool, l.steerSubagentForTool))
 	l.registry.Register(tools.NewAgentsListTool(l.listSubagentAgentsForTool))
+	l.registry.Register(tools.NewGoogleWorkspaceReadTool())
+	l.registry.Register(tools.NewM365ReadTool())
 }
 
 // Run starts the agent loop, processing messages from the bus.

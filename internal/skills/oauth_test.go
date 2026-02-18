@@ -2,12 +2,14 @@ package skills
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStartOAuthFlowGoogleWritesPending(t *testing.T) {
@@ -235,6 +237,176 @@ func TestStoreAndLoadEnvSecretsInLocalTomb(t *testing.T) {
 	}
 	if got["OPENAI_API_KEY"] != "sk-test" || got["GITHUB_TOKEN"] != "ghp-test" {
 		t.Fatalf("unexpected tomb env payload: %#v", got)
+	}
+}
+
+func TestGetOAuthAccessTokenExpiredWithoutRefreshFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("KAFCLAW_HOME", home)
+	t.Setenv("KAFCLAW_CONFIG", filepath.Join(home, ".kafclaw", "config.json"))
+	t.Setenv("KAFCLAW_OAUTH_KEY_BACKEND", "file")
+
+	start, err := StartOAuthFlow(OAuthStartInput{
+		Provider:     ProviderGoogleWorkspace,
+		Profile:      "expired-no-refresh",
+		ClientID:     "cid",
+		ClientSecret: "secret",
+		RedirectURI:  "http://localhost:53682/callback",
+		Scopes:       []string{"openid", "email"},
+	})
+	if err != nil {
+		t.Fatalf("start oauth failed: %v", err)
+	}
+
+	origTransport := http.DefaultTransport
+	defer func() { http.DefaultTransport = origTransport }()
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `{"access_token":"at","refresh_token":"","token_type":"Bearer","expires_in":1,"scope":"openid email"}`
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	if _, err := CompleteOAuthFlow(OAuthCompleteInput{
+		Provider: ProviderGoogleWorkspace,
+		Profile:  "expired-no-refresh",
+		Code:     "abc-code",
+		State:    start.State,
+	}); err != nil {
+		t.Fatalf("complete oauth failed: %v", err)
+	}
+
+	tokenPath, err := oauthStateFile(ProviderGoogleWorkspace, "expired-no-refresh", "token.json")
+	if err != nil {
+		t.Fatalf("token path: %v", err)
+	}
+	raw, err := os.ReadFile(tokenPath)
+	if err != nil {
+		t.Fatalf("read token file: %v", err)
+	}
+	plain, err := decryptOAuthStateBlob(raw)
+	if err != nil {
+		t.Fatalf("decrypt token file: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(plain, &payload); err != nil {
+		t.Fatalf("unmarshal token payload: %v", err)
+	}
+	payload["expires_at"] = time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	payload["refresh_token"] = ""
+	updated, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal updated token: %v", err)
+	}
+	sealed, err := encryptOAuthStateBlob(append(updated, '\n'))
+	if err != nil {
+		t.Fatalf("encrypt updated token: %v", err)
+	}
+	if err := os.WriteFile(tokenPath, sealed, 0o600); err != nil {
+		t.Fatalf("write updated token: %v", err)
+	}
+
+	_, err = GetOAuthAccessToken(ProviderGoogleWorkspace, "expired-no-refresh")
+	if err == nil || !strings.Contains(err.Error(), "cannot be refreshed") {
+		t.Fatalf("expected cannot-be-refreshed error, got: %v", err)
+	}
+}
+
+func TestGetOAuthAccessTokenRefreshesWhenExpired(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("KAFCLAW_HOME", home)
+	t.Setenv("KAFCLAW_CONFIG", filepath.Join(home, ".kafclaw", "config.json"))
+	t.Setenv("KAFCLAW_OAUTH_KEY_BACKEND", "file")
+
+	start, err := StartOAuthFlow(OAuthStartInput{
+		Provider:     ProviderGoogleWorkspace,
+		Profile:      "refresh-ok",
+		ClientID:     "cid",
+		ClientSecret: "secret",
+		RedirectURI:  "http://localhost:53682/callback",
+		Scopes:       []string{"https://www.googleapis.com/auth/gmail.readonly"},
+	})
+	if err != nil {
+		t.Fatalf("start oauth failed: %v", err)
+	}
+
+	origTransport := http.DefaultTransport
+	defer func() { http.DefaultTransport = origTransport }()
+	callCount := 0
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		callCount++
+		if req.Method == http.MethodPost && strings.Contains(req.URL.Host, "oauth2.googleapis.com") {
+			// first call = code exchange, second call = refresh
+			if callCount == 1 {
+				body := `{"access_token":"at-initial","refresh_token":"rt1","token_type":"Bearer","expires_in":1,"scope":"https://www.googleapis.com/auth/gmail.readonly"}`
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(bytes.NewBufferString(body)),
+					Header:     make(http.Header),
+					Request:    req,
+				}, nil
+			}
+			body := `{"access_token":"at-refreshed","refresh_token":"rt2","token_type":"Bearer","expires_in":3600,"scope":"https://www.googleapis.com/auth/gmail.readonly"}`
+			return &http.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(bytes.NewBufferString(body)),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: 404,
+			Body:       io.NopCloser(bytes.NewBufferString(`{"error":"not_found"}`)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	if _, err := CompleteOAuthFlow(OAuthCompleteInput{
+		Provider: ProviderGoogleWorkspace,
+		Profile:  "refresh-ok",
+		Code:     "abc-code",
+		State:    start.State,
+	}); err != nil {
+		t.Fatalf("complete oauth failed: %v", err)
+	}
+
+	tokenPath, err := oauthStateFile(ProviderGoogleWorkspace, "refresh-ok", "token.json")
+	if err != nil {
+		t.Fatalf("token path: %v", err)
+	}
+	raw, err := os.ReadFile(tokenPath)
+	if err != nil {
+		t.Fatalf("read token file: %v", err)
+	}
+	plain, err := decryptOAuthStateBlob(raw)
+	if err != nil {
+		t.Fatalf("decrypt token file: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(plain, &payload); err != nil {
+		t.Fatalf("unmarshal token payload: %v", err)
+	}
+	payload["expires_at"] = time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339)
+	updated, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal updated token: %v", err)
+	}
+	sealed, err := encryptOAuthStateBlob(append(updated, '\n'))
+	if err != nil {
+		t.Fatalf("encrypt updated token: %v", err)
+	}
+	if err := os.WriteFile(tokenPath, sealed, 0o600); err != nil {
+		t.Fatalf("write updated token: %v", err)
+	}
+
+	acc, err := GetOAuthAccessToken(ProviderGoogleWorkspace, "refresh-ok")
+	if err != nil {
+		t.Fatalf("get oauth access token: %v", err)
+	}
+	if acc.AccessToken != "at-refreshed" {
+		t.Fatalf("expected refreshed token, got %q", acc.AccessToken)
 	}
 }
 

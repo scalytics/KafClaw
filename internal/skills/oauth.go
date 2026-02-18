@@ -86,6 +86,21 @@ type oauthTokenRaw struct {
 	ErrorDesc    string `json:"error_description,omitempty"`
 }
 
+type oauthStoredToken struct {
+	Provider     OAuthProvider `json:"provider"`
+	Profile      string        `json:"profile"`
+	AccessToken  string        `json:"access_token"`
+	RefreshToken string        `json:"refresh_token,omitempty"`
+	IDToken      string        `json:"id_token,omitempty"`
+	TokenType    string        `json:"token_type,omitempty"`
+	Scope        string        `json:"scope,omitempty"`
+	ObtainedAt   string        `json:"obtained_at,omitempty"`
+	ExpiresAt    string        `json:"expires_at,omitempty"`
+	ClientID     string        `json:"client_id,omitempty"`
+	ClientSecret string        `json:"client_secret,omitempty"`
+	TenantID     string        `json:"tenant_id,omitempty"`
+}
+
 // StartOAuthFlow starts browser/copy auth flow for Google Workspace or M365.
 func StartOAuthFlow(in OAuthStartInput) (*OAuthStartResult, error) {
 	pending, err := buildPending(in)
@@ -148,7 +163,7 @@ func CompleteOAuthFlow(in OAuthCompleteInput) (*OAuthTokenResult, error) {
 		expiresAt = now.Add(time.Duration(tokenRaw.ExpiresIn) * time.Second)
 	}
 
-	tokenPath, err := saveOAuthToken(pending.Provider, pending.Profile, tokenRaw, now, expiresAt)
+	tokenPath, err := saveOAuthToken(pending, tokenRaw, now, expiresAt)
 	if err != nil {
 		_ = appendOAuthSecurityEvent("skills_oauth_complete", pending.Provider, pending.Profile, false, err.Error())
 		return nil, err
@@ -354,7 +369,9 @@ func removePendingOAuth(provider OAuthProvider, profile string) error {
 	return nil
 }
 
-func saveOAuthToken(provider OAuthProvider, profile string, raw *oauthTokenRaw, obtainedAt, expiresAt time.Time) (string, error) {
+func saveOAuthToken(pending *oauthPending, raw *oauthTokenRaw, obtainedAt, expiresAt time.Time) (string, error) {
+	provider := pending.Provider
+	profile := pending.Profile
 	dir, err := oauthStateDir(provider, profile)
 	if err != nil {
 		return "", err
@@ -371,6 +388,9 @@ func saveOAuthToken(provider OAuthProvider, profile string, raw *oauthTokenRaw, 
 		"token_type":    raw.TokenType,
 		"scope":         raw.Scope,
 		"obtained_at":   obtainedAt.Format(time.RFC3339),
+		"client_id":     pending.ClientID,
+		"client_secret": pending.ClientSecret,
+		"tenant_id":     pending.TenantID,
 	}
 	if !expiresAt.IsZero() {
 		payload["expires_at"] = expiresAt.Format(time.RFC3339)
@@ -388,6 +408,190 @@ func saveOAuthToken(provider OAuthProvider, profile string, raw *oauthTokenRaw, 
 		return "", err
 	}
 	return path, nil
+}
+
+// OAuthAccessToken contains access-token material for provider API calls.
+type OAuthAccessToken struct {
+	Provider    OAuthProvider `json:"provider"`
+	Profile     string        `json:"profile"`
+	AccessToken string        `json:"accessToken"`
+	TokenType   string        `json:"tokenType,omitempty"`
+	Scope       string        `json:"scope,omitempty"`
+	ExpiresAt   time.Time     `json:"expiresAt,omitempty"`
+	ObtainedAt  time.Time     `json:"obtainedAt,omitempty"`
+}
+
+// GetOAuthAccessToken loads the encrypted token state and returns a usable access token.
+// If the token is expired and refresh metadata is available, it refreshes and re-seals token.json.
+func GetOAuthAccessToken(provider OAuthProvider, profile string) (*OAuthAccessToken, error) {
+	stored, err := loadOAuthStoredToken(provider, profile)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	exp, _ := parseOptionalRFC3339(stored.ExpiresAt)
+	if !exp.IsZero() && now.After(exp.Add(-2*time.Minute)) {
+		if strings.TrimSpace(stored.RefreshToken) == "" ||
+			strings.TrimSpace(stored.ClientID) == "" ||
+			strings.TrimSpace(stored.ClientSecret) == "" {
+			return nil, fmt.Errorf("oauth token expired for %s/%s and cannot be refreshed; rerun `kafclaw skills auth start|complete`", provider, profile)
+		}
+		refreshed, refreshErr := refreshOAuthToken(stored)
+		if refreshErr != nil {
+			return nil, refreshErr
+		}
+		if err := saveRefreshedOAuthToken(stored, refreshed, now); err != nil {
+			return nil, err
+		}
+		stored, err = loadOAuthStoredToken(provider, profile)
+		if err != nil {
+			return nil, err
+		}
+		exp, _ = parseOptionalRFC3339(stored.ExpiresAt)
+	}
+	obtained, _ := parseOptionalRFC3339(stored.ObtainedAt)
+	return &OAuthAccessToken{
+		Provider:    stored.Provider,
+		Profile:     stored.Profile,
+		AccessToken: stored.AccessToken,
+		TokenType:   stored.TokenType,
+		Scope:       stored.Scope,
+		ExpiresAt:   exp,
+		ObtainedAt:  obtained,
+	}, nil
+}
+
+func loadOAuthStoredToken(provider OAuthProvider, profile string) (*oauthStoredToken, error) {
+	path, err := oauthStateFile(provider, profile, "token.json")
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	plain, err := decryptOAuthStateBlob(data)
+	if err != nil {
+		return nil, err
+	}
+	var tok oauthStoredToken
+	if err := json.Unmarshal(plain, &tok); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(tok.AccessToken) == "" {
+		return nil, errors.New("oauth token file missing access_token")
+	}
+	if tok.Provider == "" {
+		tok.Provider = provider
+	}
+	if strings.TrimSpace(tok.Profile) == "" {
+		profile = sanitizeSkillName(profile)
+		if profile == "" {
+			profile = "default"
+		}
+		tok.Profile = profile
+	}
+	return &tok, nil
+}
+
+func refreshOAuthToken(stored *oauthStoredToken) (*oauthTokenRaw, error) {
+	tokenURL := ""
+	switch stored.Provider {
+	case ProviderGoogleWorkspace:
+		tokenURL = "https://oauth2.googleapis.com/token"
+	case ProviderM365:
+		tenant := strings.TrimSpace(stored.TenantID)
+		if tenant == "" {
+			tenant = "common"
+		}
+		tokenURL = fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenant)
+	default:
+		return nil, fmt.Errorf("unsupported oauth provider for refresh: %s", stored.Provider)
+	}
+	form := url.Values{}
+	form.Set("client_id", stored.ClientID)
+	form.Set("client_secret", stored.ClientSecret)
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", stored.RefreshToken)
+	req, err := http.NewRequest(http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var out oauthTokenRaw
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode refresh token response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if out.Error != "" {
+			return nil, fmt.Errorf("oauth token refresh failed: %s (%s)", out.Error, out.ErrorDesc)
+		}
+		return nil, fmt.Errorf("oauth token refresh failed: status %d", resp.StatusCode)
+	}
+	if strings.TrimSpace(out.AccessToken) == "" {
+		return nil, errors.New("oauth token refresh missing access_token")
+	}
+	return &out, nil
+}
+
+func saveRefreshedOAuthToken(prev *oauthStoredToken, refreshed *oauthTokenRaw, now time.Time) error {
+	expiresAt := time.Time{}
+	if refreshed.ExpiresIn > 0 {
+		expiresAt = now.Add(time.Duration(refreshed.ExpiresIn) * time.Second)
+	}
+	dir, err := oauthStateDir(prev.Provider, prev.Profile)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	merged := map[string]any{
+		"provider":      prev.Provider,
+		"profile":       prev.Profile,
+		"access_token":  refreshed.AccessToken,
+		"refresh_token": prev.RefreshToken,
+		"id_token":      refreshed.IDToken,
+		"token_type":    refreshed.TokenType,
+		"scope":         refreshed.Scope,
+		"obtained_at":   now.Format(time.RFC3339),
+		"client_id":     prev.ClientID,
+		"client_secret": prev.ClientSecret,
+		"tenant_id":     prev.TenantID,
+	}
+	if strings.TrimSpace(refreshed.RefreshToken) != "" {
+		merged["refresh_token"] = refreshed.RefreshToken
+	}
+	if !expiresAt.IsZero() {
+		merged["expires_at"] = expiresAt.Format(time.RFC3339)
+	}
+	data, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return err
+	}
+	sealed, err := encryptOAuthStateBlob(append(data, '\n'))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "token.json"), sealed, 0o600)
+}
+
+func parseOptionalRFC3339(v string) (time.Time, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
 }
 
 func oauthStateDir(provider OAuthProvider, profile string) (string, error) {
