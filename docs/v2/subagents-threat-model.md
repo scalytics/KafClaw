@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # Subagents Threat Model
 
 ## Scope

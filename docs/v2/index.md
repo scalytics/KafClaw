@@ -1,16 +1,12 @@
+---
+title: v2 Docs
+nav_order: 2
+has_children: true
+---
+
 # KafClaw Documentation (v2)
 
 Primary v2 reference set for KafClaw.
-
-## Quick Links
-
-- [Docs Home](../index.md)
-- [Getting Started](../getting-started.md)
-- [Manage KafClaw](../manage-kafclaw.md)
-- [Operations and Maintenance](../maintenance.md)
-- [How Agents Work](../concepts/how-agents-work.md)
-- [Soul and Identity Files](../concepts/soul-identity-tools.md)
-- [Runtime Tools and Capabilities](../concepts/runtime-tools.md)
 
 ## Guides
 
@@ -36,4 +32,3 @@ Primary v2 reference set for KafClaw.
 ## Scope
 
 - `docs/v2/` is the current documentation set.
-- `docs/security/` keeps security audits and roadmap notes.

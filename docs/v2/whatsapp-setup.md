@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # WhatsApp Setup (Default Deny)
 
 > See also: [FR-001 WhatsApp Auth Flow](../requirements/FR-001-whatsapp-auth-flow.md)

@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # KafClaw Security Risks
 
 Giving an AI agent access to your shell and filesystem is powerful but carries inherent risks. KafClaw is designed with a "secure by default" philosophy, but you must be aware of potential vulnerabilities.

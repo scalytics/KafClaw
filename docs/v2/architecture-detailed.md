@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # KafClaw System Architecture — Detailed Reference
 
 > For the quick overview, see [architecture.md](./architecture.md).

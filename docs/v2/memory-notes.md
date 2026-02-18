@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # Memory Notes
 
 Personal context notes for the KafClaw agent.

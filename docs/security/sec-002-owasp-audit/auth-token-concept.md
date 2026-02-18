@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # Authentication and Authorization via Tokens - KafClaw
 
 **Date:** 2026-02-16

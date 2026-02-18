@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # KafClaw Security Roadmap
 
 > Date: 2026-02-16 | Status: Active | Owner: Core Team

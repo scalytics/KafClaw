@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # Runtime Tools and Capabilities
 
 This is the runtime-accurate tool view for current Go agent loop behavior.

@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # How Agents Work
 
 This page describes the live runtime path from message input to response output.

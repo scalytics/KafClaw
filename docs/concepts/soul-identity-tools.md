@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # Soul and Identity Files
 
 KafClaw agents are shaped by a workspace-level file set scaffolded during onboarding.

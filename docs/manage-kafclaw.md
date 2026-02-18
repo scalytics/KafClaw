@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # KafClaw Management Guide
 
 Operator-focused guide for managing KafClaw from CLI and runtime endpoints.

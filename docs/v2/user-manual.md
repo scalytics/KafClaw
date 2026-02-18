@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # KafClaw User Manual
 
 A comprehensive guide to installing, configuring, and using KafClaw — a personal AI assistant framework written in Go with an Electron desktop frontend.
