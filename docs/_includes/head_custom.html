@@ -4,14 +4,15 @@
 
 <script>
   (function () {
+    var pref = null;
     try {
-      var pref = localStorage.getItem("kafclaw-theme");
-      if (pref === "dark" || pref === "light") {
-        document.documentElement.setAttribute("data-theme", pref);
-      } else {
-        document.documentElement.removeAttribute("data-theme");
-      }
+      pref = localStorage.getItem("kafclaw-theme");
     } catch (e) {}
+    if (pref === "dark" || pref === "light") {
+      document.documentElement.setAttribute("data-theme", pref);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
   })();
 </script>
 
@@ -81,9 +82,9 @@
     }
 
     function applyTheme(val) {
+      document.documentElement.setAttribute("data-theme", val);
       try {
         localStorage.setItem("kafclaw-theme", val);
-        document.documentElement.setAttribute("data-theme", val);
       } catch (e) {}
     }
 
