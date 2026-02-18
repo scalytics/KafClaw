@@ -7,7 +7,7 @@ title: KafClaw Architecture — Overview
 
 A quick reference for the KafClaw system architecture. For the comprehensive deep-dive, see [architecture-detailed.md](./architecture-detailed/).
 
-> See also: [FR-009 System Architecture](../requirements/FR-009-system-architecture/), [FR-013 Package Design](../requirements/FR-013-package-design/)
+> See also: FR-009 System Architecture, FR-013 Package Design
 
 ---
 

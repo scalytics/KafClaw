@@ -5,7 +5,7 @@ title: Release Process
 
 # Release Process
 
-> See also: [FR-017 Build/Test Strategy](../requirements/FR-017-build-test-strategy/)
+> See also: FR-017 Build/Test Strategy
 
 ## Versioning
 

@@ -5,7 +5,7 @@ title: Workspace Policy
 
 # Workspace Policy
 
-> See also: [FR-025 Workspace Policy](../requirements/FR-025-workspace-policy/)
+> See also: FR-025 Workspace Policy
 
 ## Fixed Workspace Path
 

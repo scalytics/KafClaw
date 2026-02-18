@@ -7,7 +7,7 @@ title: KafClaw Security Risks
 
 Giving an AI agent access to your shell and filesystem is powerful but carries inherent risks. KafClaw is designed with a "secure by default" philosophy, but you must be aware of potential vulnerabilities.
 
-> See also: [FR-006 Core Functional Requirements](../requirements/FR-006-core-functional-requirements/) (shell safety, channel auth)
+> See also: FR-006 Core Functional Requirements (shell safety, channel auth)
 
 ---
 
@@ -71,8 +71,8 @@ A hallucinating agent might write garbage data to a file or misinterpret an `edi
 An unauthorized sender could trigger expensive LLM calls.
 
 **Mitigations:**
-- Default-deny WhatsApp authorization ([FR-001](../requirements/FR-001-whatsapp-auth-flow/))
-- Silent inbound by default ([FR-008](../requirements/FR-008-whatsapp-silent-inbound/))
+- Default-deny WhatsApp authorization (FR-001)
+- Silent inbound by default (FR-008)
 - External senders restricted to Tier 0 (read-only) tools
 - Unknown senders placed in pending queue, not processed
 

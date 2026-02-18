@@ -113,7 +113,7 @@ Once the gateway is running:
 
 ## 3. CLI Reference
 
-> See also: [FR-003 CLI Runtime Modes](../requirements/FR-003-cli-runtime-modes/)
+> See also: FR-003 CLI Runtime Modes
 
 KafClaw provides the following CLI commands. Run `kafclaw --help` for the full list.
 Core startup commands: `onboard`, `doctor`, `status`, `gateway`, `agent`, `config`.
@@ -311,7 +311,7 @@ Header status indicators: mode badge, memory LED, sidecar/connection status.
 
 ## 5. WhatsApp, Slack, and Teams Integration
 
-> See also: [FR-001 WhatsApp Auth Flow](../requirements/FR-001-whatsapp-auth-flow/), [FR-008 WhatsApp Silent Inbound](../requirements/FR-008-whatsapp-silent-inbound/), [whatsapp-setup.md](./whatsapp-setup/) for full details
+> See also: FR-001 WhatsApp Auth Flow, FR-008 WhatsApp Silent Inbound, [whatsapp-setup.md](./whatsapp-setup/) for full details
 
 KafClaw uses `whatsmeow` for native Go WhatsApp connectivity. No Node.js bridge required.
 
@@ -375,7 +375,7 @@ Known limits:
 
 ## 6. Memory System
 
-> See also: [FR-019 Memory Architecture](../requirements/FR-019-memory-architecture/), [architecture-timeline.md](./architecture-timeline/) for the full memory architecture
+> See also: FR-019 Memory Architecture, [architecture-timeline.md](./architecture-timeline/) for the full memory architecture
 
 ### Overview
 
@@ -427,7 +427,7 @@ On every message, KafClaw searches semantic memory:
 
 ## 7. Day2Day Task Tracker
 
-> See also: [FR-015 Day2Day Tracker](../requirements/FR-015-day2day-tracker/)
+> See also: FR-015 Day2Day Tracker
 
 Built-in daily task management. Commands work via any channel (CLI, WhatsApp, Web UI).
 
@@ -467,7 +467,7 @@ Format: `- [ ]` for open, `- [x]` for completed. Includes progress log, consolid
 
 ## 8. Soul Files and Workspace
 
-> See also: [FR-025 Workspace Policy](../requirements/FR-025-workspace-policy/), [FR-023 Skill System](../requirements/FR-023-skill-system/)
+> See also: FR-025 Workspace Policy, FR-023 Skill System
 
 ### Workspace Structure
 
@@ -491,7 +491,7 @@ The agent's exclusive write target. Default: `~/.kafclaw/work-repo/`.
 
 Artifact directories:
 - `memory/` — Memory files (MEMORY.md, daily notes)
-- `requirements/` — Behavior specifications
+- Specification docs — Behavior specifications
 - `tasks/` — Plans and milestones
 - `docs/` — Explanations and summaries
 
