@@ -1,16 +1,17 @@
-//go:build !windows
+//go:build windows
 
 package scheduler
 
 import (
+	"errors"
 	"os"
-	"syscall"
 )
 
-// FileLock provides a non-blocking file lock using flock(2).
+// FileLock provides a non-blocking file lock on Windows by atomically
+// creating a lock file. Creation fails while another process owns the lock.
 type FileLock struct {
-	path string
-	file *os.File
+	path   string
+	locked bool
 }
 
 // NewFileLock creates a FileLock for the given path.
@@ -21,36 +22,29 @@ func NewFileLock(path string) *FileLock {
 // TryLock attempts to acquire the lock without blocking.
 // Returns true if the lock was acquired, false if another process holds it.
 func (l *FileLock) TryLock() (bool, error) {
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 	if err != nil {
-		return false, err
-	}
-
-	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-	if err != nil {
-		f.Close()
-		if err == syscall.EWOULDBLOCK {
+		if errors.Is(err, os.ErrExist) {
 			return false, nil
 		}
 		return false, err
 	}
-
-	l.file = f
+	if err := f.Close(); err != nil {
+		_ = os.Remove(l.path)
+		return false, err
+	}
+	l.locked = true
 	return true, nil
 }
 
 // Unlock releases the lock and removes the lock file.
 func (l *FileLock) Unlock() error {
-	if l.file == nil {
+	if !l.locked {
 		return nil
 	}
-	if err := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN); err != nil {
-		l.file.Close()
+	if err := os.Remove(l.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	name := l.file.Name()
-	l.file.Close()
-	l.file = nil
-	os.Remove(name)
+	l.locked = false
 	return nil
 }
