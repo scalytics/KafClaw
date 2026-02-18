@@ -2,8 +2,70 @@
 {% assign seo_description = page.description | default: page.excerpt | default: site.description | strip_html | normalize_whitespace %}
 {% assign seo_image = page.image | default: site.logo | default: "/assets/kafclaw.png" %}
 
+<script>
+  (function () {
+    try {
+      var pref = localStorage.getItem("kafclaw-theme");
+      if (pref === "dark" || pref === "light") {
+        document.documentElement.setAttribute("data-theme", pref);
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
+    } catch (e) {}
+  })();
+</script>
+
 <link rel="icon" type="image/png" href="{{ seo_image | relative_url }}">
 <link rel="apple-touch-icon" href="{{ seo_image | relative_url }}">
+
+<style>
+  .theme-switcher select {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--body-background-color);
+    color: var(--body-text-color);
+  }
+</style>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var auxNav = document.querySelector(".aux-nav .aux-nav-list");
+    if (!auxNav || document.getElementById("kafclaw-theme-switcher")) return;
+
+    var li = document.createElement("li");
+    li.className = "aux-nav-list-item theme-switcher";
+    li.id = "kafclaw-theme-switcher";
+
+    var select = document.createElement("select");
+    select.setAttribute("aria-label", "Theme");
+    select.innerHTML = '<option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option>';
+
+    try {
+      var pref = localStorage.getItem("kafclaw-theme");
+      select.value = pref === "light" || pref === "dark" ? pref : "auto";
+    } catch (e) {
+      select.value = "auto";
+    }
+
+    select.addEventListener("change", function () {
+      var val = select.value;
+      try {
+        if (val === "auto") {
+          localStorage.removeItem("kafclaw-theme");
+          document.documentElement.removeAttribute("data-theme");
+        } else {
+          localStorage.setItem("kafclaw-theme", val);
+          document.documentElement.setAttribute("data-theme", val);
+        }
+      } catch (e) {}
+    });
+
+    li.appendChild(select);
+    auxNav.appendChild(li);
+  });
+</script>
 
 <script type="application/ld+json">
 {
