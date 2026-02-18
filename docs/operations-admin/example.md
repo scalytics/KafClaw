@@ -1,9 +1,9 @@
 ---
 parent: Operations and Admin
-title: Workshop Setup — 4-Agent Group Deployment
+title: Example Deployment — 4-Agent Group
 ---
 
-# Workshop Setup — 4-Agent Group Deployment
+# Example Deployment — 4-Agent Group
 
 Deploy a KafClaw Workshop: 1 desktop Electron agent (Mac) + 3 headless Docker agents sharing one gateway and one KafScale bus.
 

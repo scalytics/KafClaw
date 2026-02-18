@@ -1,5 +1,6 @@
 ---
-parent: Start Here
+title: User Manual
+nav_order: 3
 ---
 
 # KafClaw User Manual
