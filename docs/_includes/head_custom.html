@@ -19,13 +19,38 @@
 <link rel="apple-touch-icon" href="{{ seo_image | relative_url }}">
 
 <style>
-  .theme-switcher select {
-    font-size: 0.78rem;
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
+  .theme-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.15rem;
     border: 1px solid var(--border-color);
-    background: var(--body-background-color);
+    border-radius: 999px;
+    background: var(--sidebar-color);
+  }
+
+  .theme-switcher button {
+    border: 0;
+    background: transparent;
     color: var(--body-text-color);
+    font-size: 0.72rem;
+    line-height: 1;
+    border-radius: 999px;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+  }
+
+  .theme-switcher button:hover {
+    background: var(--feedback-color);
+  }
+
+  .theme-switcher button[aria-pressed="true"] {
+    background: var(--btn-primary-color);
+    color: #fff;
+  }
+
+  .theme-switcher-label {
+    display: none;
   }
 </style>
 
@@ -35,22 +60,45 @@
     if (!auxNav || document.getElementById("kafclaw-theme-switcher")) return;
 
     var li = document.createElement("li");
-    li.className = "aux-nav-list-item theme-switcher";
+    li.className = "aux-nav-list-item";
     li.id = "kafclaw-theme-switcher";
 
-    var select = document.createElement("select");
-    select.setAttribute("aria-label", "Theme");
-    select.innerHTML = '<option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option>';
+    var wrap = document.createElement("div");
+    wrap.className = "theme-switcher";
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Theme");
 
-    try {
-      var pref = localStorage.getItem("kafclaw-theme");
-      select.value = pref === "light" || pref === "dark" ? pref : "auto";
-    } catch (e) {
-      select.value = "auto";
+    var label = document.createElement("span");
+    label.className = "theme-switcher-label";
+    label.textContent = "Theme";
+    wrap.appendChild(label);
+
+    function makeBtn(value, text) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.dataset.theme = value;
+      btn.textContent = text;
+      btn.setAttribute("aria-pressed", "false");
+      return btn;
     }
 
-    select.addEventListener("change", function () {
-      var val = select.value;
+    var btnAuto = makeBtn("auto", "Auto");
+    var btnLight = makeBtn("light", "Light");
+    var btnDark = makeBtn("dark", "Dark");
+    wrap.appendChild(btnAuto);
+    wrap.appendChild(btnLight);
+    wrap.appendChild(btnDark);
+
+    function currentTheme() {
+      try {
+        var pref = localStorage.getItem("kafclaw-theme");
+        return pref === "light" || pref === "dark" ? pref : "auto";
+      } catch (e) {
+        return "auto";
+      }
+    }
+
+    function applyTheme(val) {
       try {
         if (val === "auto") {
           localStorage.removeItem("kafclaw-theme");
@@ -60,9 +108,24 @@
           document.documentElement.setAttribute("data-theme", val);
         }
       } catch (e) {}
+    }
+
+    function paintActive(val) {
+      [btnAuto, btnLight, btnDark].forEach(function (b) {
+        b.setAttribute("aria-pressed", b.dataset.theme === val ? "true" : "false");
+      });
+    }
+
+    [btnAuto, btnLight, btnDark].forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var val = btn.dataset.theme;
+        applyTheme(val);
+        paintActive(val);
+      });
     });
 
-    li.appendChild(select);
+    paintActive(currentTheme());
+    li.appendChild(wrap);
     auxNav.appendChild(li);
   });
 </script>
