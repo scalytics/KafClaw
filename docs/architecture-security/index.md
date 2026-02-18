@@ -6,11 +6,11 @@ has_children: true
 
 # Architecture and Security
 
-- [Security for Operators](./security-for-ops.md)
-- [Architecture Overview](./architecture.md)
-- [Detailed Architecture](./architecture-detailed.md)
-- [Timeline and Memory Architecture](./architecture-timeline.md)
-- [Security Risks](./security-risks.md)
-- [Subagents Threat Model](./subagents-threat-model.md)
-- [Workspace Policy](./workspace-policy.md)
+- [Security for Operators](./security-for-ops/)
+- [Architecture Overview](./architecture/)
+- [Detailed Architecture](./architecture-detailed/)
+- [Timeline and Memory Architecture](./architecture-timeline/)
+- [Security Risks](./security-risks/)
+- [Subagents Threat Model](./subagents-threat-model/)
+- [Workspace Policy](./workspace-policy/)
 - [Architecture Visual (HTML)](./architecture-visual.html)

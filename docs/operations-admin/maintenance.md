@@ -150,6 +150,6 @@ Use trace views in dashboard to inspect these lifecycle events.
 
 ## Deep References
 
-- [Operations Guide](./operations-guide.md)
-- [Admin Guide](./admin-guide.md)
-- [Security Risks](../architecture-security/security-risks.md)
+- [Operations Guide](./operations-guide/)
+- [Admin Guide](./admin-guide/)
+- [Security Risks](../architecture-security/security-risks/)

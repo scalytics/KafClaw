@@ -4,7 +4,7 @@ parent: Operations and Admin
 
 # Docker Compose Deployment
 
-> See also: [FR-024 Standalone Mode](../requirements/FR-024-standalone-mode.md) for deployment mode details
+> See also: [FR-024 Standalone Mode](../requirements/FR-024-standalone-mode/) for deployment mode details
 
 ## Build Image
 

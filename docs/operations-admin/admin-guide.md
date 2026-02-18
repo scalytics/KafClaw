@@ -257,7 +257,7 @@ Announce routing parity:
 
 KafClaw implements defense in depth: tool tiering, policy evaluation, shell filtering, filesystem confinement, and attack intent detection.
 
-> See also: [FR-006 Core Functional Requirements](../requirements/FR-006-core-functional-requirements.md)
+> See also: [FR-006 Core Functional Requirements](../requirements/FR-006-core-functional-requirements/)
 
 ### Tool Risk Tiers
 
@@ -304,7 +304,7 @@ git, ls, cat, pwd, rg, grep, sed, head, tail, wc, echo
 
 ### Filesystem Security
 
-> See also: [FR-005 Bot Work Repo](../requirements/FR-005-bot-work-repo.md)
+> See also: [FR-005 Bot Work Repo](../requirements/FR-005-bot-work-repo/)
 
 - `read_file`, `list_dir`: Can access any path (Tier 0)
 - `write_file`, `edit_file`: Restricted to work repo root (Tier 1). Writes outside return error.
@@ -332,7 +332,7 @@ Three-tier system stored in timeline DB:
 | `whatsapp_denylist` | Blocked JIDs |
 | `whatsapp_pending` | JIDs awaiting approval |
 
-Default-deny: empty allowlist means nobody is authorized. See [FR-001](../requirements/FR-001-whatsapp-auth-flow.md).
+Default-deny: empty allowlist means nobody is authorized. See [FR-001](../requirements/FR-001-whatsapp-auth-flow/).
 
 ### Slack and Teams access policy and isolation
 
@@ -391,7 +391,7 @@ type Embedder interface {
 
 ## 4. Memory and RAG Administration
 
-> See also: [FR-019 Memory Architecture](../requirements/FR-019-memory-architecture.md)
+> See also: [FR-019 Memory Architecture](../requirements/FR-019-memory-architecture/)
 
 ### Architecture
 
@@ -559,7 +559,7 @@ Stored in `settings` table of `~/.kafclaw/timeline.db`.
 
 ## 8. Web User Management
 
-> See also: [FR-007 Web UI WhatsApp Linking](../requirements/FR-007-web-ui-whatsapp-linking.md)
+> See also: [FR-007 Web UI WhatsApp Linking](../requirements/FR-007-web-ui-whatsapp-linking/)
 
 ### Web Users
 

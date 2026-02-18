@@ -4,8 +4,8 @@ parent: Architecture and Security
 
 # KafClaw System Architecture — Detailed Reference
 
-> For the quick overview, see [architecture.md](./architecture.md).
-> See also: [FR-009 System Architecture](../requirements/FR-009-system-architecture.md), [FR-013 Package Design](../requirements/FR-013-package-design.md), [FR-018 Interface Contracts](../requirements/FR-018-interface-contracts.md)
+> For the quick overview, see [architecture.md](./architecture/).
+> See also: [FR-009 System Architecture](../requirements/FR-009-system-architecture/), [FR-013 Package Design](../requirements/FR-013-package-design/), [FR-018 Interface Contracts](../requirements/FR-018-interface-contracts/)
 
 ---
 
@@ -465,7 +465,7 @@ Multi-agent hierarchies:
 
 ## 6. Memory Architecture
 
-> See also: [FR-019 Memory Architecture](../requirements/FR-019-memory-architecture.md), [FR-021 Memory v2 Implementation Plan](../requirements/FR-021-memory-v2-implementation-plan.md)
+> See also: [FR-019 Memory Architecture](../requirements/FR-019-memory-architecture/), [FR-021 Memory v2 Implementation Plan](../requirements/FR-021-memory-v2-implementation-plan/)
 
 ### 6.1 Layer Overview
 
@@ -578,7 +578,7 @@ Renderer (Vue 3 SPA)
 
 ## 9. Security Model
 
-> See also: [admin-guide.md](./admin-guide.md#2-security-model) for the comprehensive security reference, [security-risks.md](./security-risks.md) for threat model
+> See also: [admin-guide.md](./admin-guide.md#2-security-model) for the comprehensive security reference, [security-risks.md](./security-risks/) for threat model
 
 ### 9.1 Tool Authorization (3-Tier)
 
@@ -610,7 +610,7 @@ Destructive deletion, VCS deletion, disk destruction, device redirection, permis
 
 ## 10. Deployment Modes
 
-> See also: [operations-guide.md](./operations-guide.md#3-deployment) for full deployment instructions, [FR-024 Standalone Mode](../requirements/FR-024-standalone-mode.md)
+> See also: [operations-guide.md](./operations-guide.md#3-deployment) for full deployment instructions, [FR-024 Standalone Mode](../requirements/FR-024-standalone-mode/)
 
 | Mode | Command | Description |
 |------|---------|-------------|
@@ -644,7 +644,7 @@ KAFCLAW_GATEWAY_HOST=192.168.0.199 make run      # bind to specific IP
 
 ## 11. Build and Release
 
-> See also: [release.md](./release.md), [operations-guide.md](./operations-guide.md#2-build-and-release)
+> See also: [release.md](./release/), [operations-guide.md](./operations-guide.md#2-build-and-release)
 
 ### Key Makefile Targets
 

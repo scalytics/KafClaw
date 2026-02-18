@@ -4,7 +4,7 @@ parent: Architecture and Security
 
 # Workspace Policy
 
-> See also: [FR-025 Workspace Policy](../requirements/FR-025-workspace-policy.md)
+> See also: [FR-025 Workspace Policy](../requirements/FR-025-workspace-policy/)
 
 ## Fixed Workspace Path
 

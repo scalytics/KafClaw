@@ -258,9 +258,9 @@ Join and verify:
 
 ## Next
 
-- [Manage KafClaw](../operations-admin/manage-kafclaw.md)
-- [Operations and Maintenance](../operations-admin/maintenance.md)
-- [How Agents Work](../agent-concepts/how-agents-work.md)
-- [Soul and Identity Files](../agent-concepts/soul-identity-tools.md)
-- [User Manual](./user-manual.md)
-- [Admin Guide](../operations-admin/admin-guide.md)
+- [Manage KafClaw](../operations-admin/manage-kafclaw/)
+- [Operations and Maintenance](../operations-admin/maintenance/)
+- [How Agents Work](../agent-concepts/how-agents-work/)
+- [Soul and Identity Files](../agent-concepts/soul-identity-tools/)
+- [User Manual](./user-manual/)
+- [Admin Guide](../operations-admin/admin-guide/)

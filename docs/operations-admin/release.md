@@ -4,7 +4,7 @@ parent: Operations and Admin
 
 # Release Process
 
-> See also: [FR-017 Build/Test Strategy](../requirements/FR-017-build-test-strategy.md)
+> See also: [FR-017 Build/Test Strategy](../requirements/FR-017-build-test-strategy/)
 
 ## Versioning
 

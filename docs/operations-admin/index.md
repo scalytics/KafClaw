@@ -6,10 +6,10 @@ has_children: true
 
 # Operations and Admin
 
-- [Manage KafClaw](./manage-kafclaw.md)
-- [Operations and Maintenance](./maintenance.md)
-- [Admin Guide](./admin-guide.md)
-- [Operations Guide](./operations-guide.md)
-- [Docker Deployment](./docker-deployment.md)
-- [Release Process](./release.md)
-- [Workshop Setup](./workshop-setup.md)
+- [Manage KafClaw](./manage-kafclaw/)
+- [Operations and Maintenance](./maintenance/)
+- [Admin Guide](./admin-guide/)
+- [Operations Guide](./operations-guide/)
+- [Docker Deployment](./docker-deployment/)
+- [Release Process](./release/)
+- [Workshop Setup](./workshop-setup/)
