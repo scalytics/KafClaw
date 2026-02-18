@@ -51,6 +51,8 @@ var onboardJSON bool
 var onboardSkipSkills bool
 var onboardInstallClawhub bool
 var onboardSkillsNodeMajor string
+var onboardGoogleWorkspaceRead string
+var onboardM365Read string
 
 type onboardingSkillsSummary struct {
 	Enabled      bool     `json:"enabled"`
@@ -94,6 +96,8 @@ func init() {
 	onboardCmd.Flags().BoolVar(&onboardSkipSkills, "skip-skills", false, "Skip skills bootstrap")
 	onboardCmd.Flags().BoolVar(&onboardInstallClawhub, "install-clawhub", true, "Install clawhub via npm if missing during skills bootstrap")
 	onboardCmd.Flags().StringVar(&onboardSkillsNodeMajor, "skills-node-major", "20", "Node major version to pin in .nvmrc for skills")
+	onboardCmd.Flags().StringVar(&onboardGoogleWorkspaceRead, "google-workspace-read", "", "Preconfigure google-workspace capabilities (mail,calendar,drive,all)")
+	onboardCmd.Flags().StringVar(&onboardM365Read, "m365-read", "", "Preconfigure m365 capabilities (mail,calendar,files,all)")
 	onboardCmd.Flags().BoolVar(&onboardSystemd, "systemd", false, "Install systemd service + override + env file (Linux)")
 	onboardCmd.Flags().StringVar(&onboardServiceUser, "service-user", "kafclaw", "Service user for systemd setup")
 	onboardCmd.Flags().StringVar(&onboardServiceBinary, "service-binary", "/usr/local/bin/kafclaw", "kafclaw binary path for systemd ExecStart")
@@ -207,10 +211,43 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		NodeFound:    skillruntime.HasBinary("node"),
 		ClawhubFound: skillruntime.HasBinary("clawhub"),
 	}
+	hasCapabilitySelection := strings.TrimSpace(onboardGoogleWorkspaceRead) != "" || strings.TrimSpace(onboardM365Read) != ""
+	if hasCapabilitySelection {
+		if cfg.Skills.Entries == nil {
+			cfg.Skills.Entries = map[string]config.SkillEntryConfig{}
+		}
+		if strings.TrimSpace(onboardGoogleWorkspaceRead) != "" {
+			caps, err := parseCapabilitySelection(onboardGoogleWorkspaceRead, map[string]struct{}{
+				"mail": {}, "calendar": {}, "drive": {}, "all": {},
+			})
+			if err != nil {
+				return fmt.Errorf("invalid --google-workspace-read: %w", err)
+			}
+			entry := cfg.Skills.Entries["google-workspace"]
+			entry.Enabled = true
+			entry.Capabilities = caps
+			cfg.Skills.Entries["google-workspace"] = entry
+		}
+		if strings.TrimSpace(onboardM365Read) != "" {
+			caps, err := parseCapabilitySelection(onboardM365Read, map[string]struct{}{
+				"mail": {}, "calendar": {}, "files": {}, "all": {},
+			})
+			if err != nil {
+				return fmt.Errorf("invalid --m365-read: %w", err)
+			}
+			entry := cfg.Skills.Entries["m365"]
+			entry.Enabled = true
+			entry.Capabilities = caps
+			cfg.Skills.Entries["m365"] = entry
+		}
+	}
 	if onboardSkipSkills {
 		fmt.Println("\nSkills bootstrap: skipped (--skip-skills)")
 	} else {
 		enableSkills := onboardNonInteractive
+		if hasCapabilitySelection {
+			enableSkills = true
+		}
 		if !onboardNonInteractive {
 			fmt.Print("\nEnable skills now? [Y/n]: ")
 			confirmReader := bufio.NewReader(cmd.InOrStdin())
@@ -251,6 +288,12 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 			fmt.Println("Skills bootstrap complete. Use 'kafclaw skills list' to inspect status.")
 		} else {
 			fmt.Println("\nSkills bootstrap: not enabled")
+		}
+	}
+	if hasCapabilitySelection {
+		if err := config.Save(cfg); err != nil {
+			fmt.Printf("Skills capability configuration warning: failed saving config: %v\n", err)
+			skillsSummary.Warnings = append(skillsSummary.Warnings, err.Error())
 		}
 	}
 

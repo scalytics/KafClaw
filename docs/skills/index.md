@@ -68,10 +68,22 @@ kafclaw configure --non-interactive --skills-scope selected
 kafclaw onboard --accept-risk --non-interactive --skip-skills=false --install-clawhub --skills-node-major 20
 ```
 
+- Optional during onboarding: preselect provider capabilities:
+
+```bash
+kafclaw onboard --accept-risk --non-interactive --skip-skills --google-workspace-read mail,drive --m365-read calendar
+```
+
 - Configure can manage global and per-skill toggles:
 
 ```bash
 kafclaw configure --non-interactive --skills-enabled-set --skills-enabled=true --skills-node-manager npm --enable-skill github --disable-skill weather
+```
+
+- Configure OAuth capability presets for provider skills:
+
+```bash
+kafclaw configure --non-interactive --google-workspace-read mail,calendar --m365-read mail,files
 ```
 
 - Doctor validates skills prerequisites/runtime readiness:
@@ -103,6 +115,7 @@ kafclaw security fix --yes
 - `kafclaw skills prereq install <name> --dry-run|--yes`
 - `kafclaw skills auth start <provider> ...`
 - `kafclaw skills auth complete <provider> --callback-url ...`
+- `kafclaw skills auth start <provider> --access mail,calendar,...` (scope presets)
 
 Agent tool names for OAuth-enrolled read-only access:
 

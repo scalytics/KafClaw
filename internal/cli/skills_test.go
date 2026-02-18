@@ -4,8 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/KafClaw/KafClaw/internal/config"
+	"github.com/KafClaw/KafClaw/internal/skills"
 )
 
 func TestSkillsStatusCommand(t *testing.T) {
@@ -103,6 +107,63 @@ func TestSkillsEnableDisableLifecycleConfigPersistence(t *testing.T) {
 	if enabled {
 		t.Fatalf("expected skills.enabled false after disable, got %#v", skillCfg["enabled"])
 	}
+}
+
+func TestResolveOAuthScopesFromAccessSelection(t *testing.T) {
+	cfg := config.DefaultConfig()
+	scopes, err := resolveOAuthScopes(cfg, skills.ProviderGoogleWorkspace, "", "mail,calendar")
+	if err != nil {
+		t.Fatalf("resolve google scopes: %v", err)
+	}
+	if !containsAll(scopes, []string{
+		"openid",
+		"email",
+		"profile",
+		"https://www.googleapis.com/auth/gmail.readonly",
+		"https://www.googleapis.com/auth/calendar.readonly",
+	}) {
+		t.Fatalf("unexpected google scopes: %#v", scopes)
+	}
+
+	mScopes, err := resolveOAuthScopes(cfg, skills.ProviderM365, "", "all")
+	if err != nil {
+		t.Fatalf("resolve m365 scopes: %v", err)
+	}
+	if !containsAll(mScopes, []string{"Mail.Read", "Calendars.Read", "Files.Read"}) {
+		t.Fatalf("unexpected m365 scopes: %#v", mScopes)
+	}
+}
+
+func TestResolveOAuthScopesFromConfiguredCapabilities(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Skills.Entries = map[string]config.SkillEntryConfig{
+		"google-workspace": {Enabled: true, Capabilities: []string{"drive"}},
+	}
+	scopes, err := resolveOAuthScopes(cfg, skills.ProviderGoogleWorkspace, "", "")
+	if err != nil {
+		t.Fatalf("resolve scopes from config: %v", err)
+	}
+	if !reflect.DeepEqual(scopes, []string{
+		"openid",
+		"email",
+		"profile",
+		"https://www.googleapis.com/auth/drive.readonly",
+	}) {
+		t.Fatalf("unexpected scopes from config: %#v", scopes)
+	}
+}
+
+func containsAll(have []string, want []string) bool {
+	set := map[string]struct{}{}
+	for _, s := range have {
+		set[s] = struct{}{}
+	}
+	for _, s := range want {
+		if _, ok := set[s]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 type assertErr string

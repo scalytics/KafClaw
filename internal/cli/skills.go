@@ -29,6 +29,7 @@ var (
 	skillsAuthClientSecret string
 	skillsAuthRedirectURI  string
 	skillsAuthScopes       string
+	skillsAuthAccess       string
 	skillsAuthTenantID     string
 	skillsAuthCode         string
 	skillsAuthState        string
@@ -393,13 +394,22 @@ var skillsAuthStartCmd = &cobra.Command{
 	Short: "Start headless OAuth flow for provider (google-workspace|m365)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return formatSkillError("CONFIG_LOAD_FAILED", err, "check ~/.kafclaw/config.json")
+		}
+		provider := skills.OAuthProvider(strings.TrimSpace(args[0]))
+		resolvedScopes, err := resolveOAuthScopes(cfg, provider, skillsAuthScopes, skillsAuthAccess)
+		if err != nil {
+			return formatSkillError("AUTH_SCOPE_RESOLVE_FAILED", err, "set --access (mail,calendar,drive/files,all) or explicit --scopes")
+		}
 		input := skills.OAuthStartInput{
-			Provider:     skills.OAuthProvider(strings.TrimSpace(args[0])),
+			Provider:     provider,
 			Profile:      skillsAuthProfile,
 			ClientID:     skillsAuthClientID,
 			ClientSecret: skillsAuthClientSecret,
 			RedirectURI:  skillsAuthRedirectURI,
-			Scopes:       strings.Split(strings.TrimSpace(skillsAuthScopes), ","),
+			Scopes:       resolvedScopes,
 			TenantID:     skillsAuthTenantID,
 		}
 		res, err := skills.StartOAuthFlow(input)
@@ -537,6 +547,7 @@ func init() {
 	skillsAuthStartCmd.Flags().StringVar(&skillsAuthClientSecret, "client-secret", "", "OAuth client secret")
 	skillsAuthStartCmd.Flags().StringVar(&skillsAuthRedirectURI, "redirect-uri", "http://localhost:53682/callback", "OAuth redirect URI")
 	skillsAuthStartCmd.Flags().StringVar(&skillsAuthScopes, "scopes", "", "Comma-separated OAuth scopes")
+	skillsAuthStartCmd.Flags().StringVar(&skillsAuthAccess, "access", "", "Capability preset list (google: mail,calendar,drive,all; m365: mail,calendar,files,all)")
 	skillsAuthStartCmd.Flags().StringVar(&skillsAuthTenantID, "tenant-id", "", "M365 tenant ID (optional, defaults common)")
 	skillsAuthStartCmd.Flags().BoolVar(&skillsAuthJSON, "json", false, "Output JSON")
 	skillsAuthCompleteCmd.Flags().StringVar(&skillsAuthProfile, "profile", "default", "Credential profile name")
@@ -622,6 +633,117 @@ func skillMissingRequirements(cfg *config.Config, name string) []string {
 		missing = append(missing, "gcloud missing")
 	}
 	return missing
+}
+
+func resolveOAuthScopes(cfg *config.Config, provider skills.OAuthProvider, explicitScopes string, accessSelection string) ([]string, error) {
+	if scopes := parseScopeCSV(explicitScopes); len(scopes) > 0 {
+		return scopes, nil
+	}
+	access := strings.TrimSpace(accessSelection)
+	if access == "" && cfg != nil {
+		if entry, ok := cfg.Skills.Entries[strings.TrimSpace(string(provider))]; ok && len(entry.Capabilities) > 0 {
+			access = strings.Join(entry.Capabilities, ",")
+		}
+	}
+	switch provider {
+	case skills.ProviderGoogleWorkspace:
+		return googleWorkspaceScopesForAccess(access)
+	case skills.ProviderM365:
+		return m365ScopesForAccess(access)
+	default:
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+}
+
+func parseScopeCSV(raw string) []string {
+	parts := strings.Split(strings.TrimSpace(raw), ",")
+	out := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, p := range parts {
+		v := strings.TrimSpace(p)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+func googleWorkspaceScopesForAccess(access string) ([]string, error) {
+	base := []string{"openid", "email", "profile"}
+	selection := strings.TrimSpace(access)
+	if selection == "" {
+		return append(base, "https://www.googleapis.com/auth/userinfo.email"), nil
+	}
+	parts, err := parseCapabilitySelection(selection, map[string]struct{}{
+		"mail": {}, "calendar": {}, "drive": {}, "all": {},
+	})
+	if err != nil {
+		return nil, err
+	}
+	all := map[string]struct{}{}
+	for _, p := range parts {
+		switch p {
+		case "all":
+			all["mail"] = struct{}{}
+			all["calendar"] = struct{}{}
+			all["drive"] = struct{}{}
+		default:
+			all[p] = struct{}{}
+		}
+	}
+	if _, ok := all["mail"]; ok {
+		base = append(base, "https://www.googleapis.com/auth/gmail.readonly")
+	}
+	if _, ok := all["calendar"]; ok {
+		base = append(base, "https://www.googleapis.com/auth/calendar.readonly")
+	}
+	if _, ok := all["drive"]; ok {
+		base = append(base, "https://www.googleapis.com/auth/drive.readonly")
+	}
+	if len(all) == 0 {
+		base = append(base, "https://www.googleapis.com/auth/userinfo.email")
+	}
+	return base, nil
+}
+
+func m365ScopesForAccess(access string) ([]string, error) {
+	base := []string{"openid", "offline_access", "User.Read"}
+	selection := strings.TrimSpace(access)
+	if selection == "" {
+		return base, nil
+	}
+	parts, err := parseCapabilitySelection(selection, map[string]struct{}{
+		"mail": {}, "calendar": {}, "files": {}, "all": {},
+	})
+	if err != nil {
+		return nil, err
+	}
+	all := map[string]struct{}{}
+	for _, p := range parts {
+		switch p {
+		case "all":
+			all["mail"] = struct{}{}
+			all["calendar"] = struct{}{}
+			all["files"] = struct{}{}
+		default:
+			all[p] = struct{}{}
+		}
+	}
+	if _, ok := all["mail"]; ok {
+		base = append(base, "Mail.Read")
+	}
+	if _, ok := all["calendar"]; ok {
+		base = append(base, "Calendars.Read")
+	}
+	if _, ok := all["files"]; ok {
+		base = append(base, "Files.Read")
+	}
+	return base, nil
 }
 
 func formatSkillError(code string, err error, remediation string) error {

@@ -273,7 +273,8 @@ type SkillLinkPolicyConfig struct {
 
 // SkillEntryConfig holds per-skill toggles.
 type SkillEntryConfig struct {
-	Enabled bool `json:"enabled"`
+	Enabled      bool     `json:"enabled"`
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // AgentsConfig mirrors OpenClaw-style defaults block for future compatibility.

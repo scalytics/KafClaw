@@ -36,7 +36,7 @@ kafclaw skills auth start google-workspace \
   --client-id '<client-id>' \
   --client-secret '<client-secret>' \
   --redirect-uri 'http://localhost:53682/callback' \
-  --scopes 'openid,email,profile,https://www.googleapis.com/auth/gmail.readonly'
+  --access 'mail,calendar,drive'
 ```
 
 ## Complete
@@ -54,6 +54,8 @@ kafclaw skills auth complete google-workspace \
 - Agent read-only tool:
   - `google_workspace_read` with `operation=gmail_list_messages|calendar_list_events|drive_list_files`
   - include Gmail/Calendar/Drive read scopes during `auth start` for the operation you need.
+- Configure capability defaults (used by `skills auth start` when `--scopes` is omitted):
+  - `kafclaw configure --google-workspace-read mail,calendar`
 
 ## Troubleshooting
 

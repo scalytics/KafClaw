@@ -38,6 +38,8 @@ func TestConfigureSkillsFlags(t *testing.T) {
 		"--skills-node-manager=pnpm",
 		"--enable-skill=github",
 		"--disable-skill=weather",
+		"--google-workspace-read=mail,calendar",
+		"--m365-read=files",
 	); err != nil {
 		t.Fatalf("configure skills flags failed: %v", err)
 	}
@@ -77,5 +79,22 @@ func TestConfigureSkillsFlags(t *testing.T) {
 	}
 	if v, _ := weather["enabled"].(bool); v {
 		t.Fatalf("expected weather enabled override false")
+	}
+	gws, ok := entries["google-workspace"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected google-workspace entry override")
+	}
+	if v, _ := gws["enabled"].(bool); !v {
+		t.Fatalf("expected google-workspace enabled override true")
+	}
+	if caps, ok := gws["capabilities"].([]any); !ok || len(caps) != 2 {
+		t.Fatalf("expected google-workspace capabilities [mail calendar], got %#v", gws["capabilities"])
+	}
+	m365, ok := entries["m365"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected m365 entry override")
+	}
+	if caps, ok := m365["capabilities"].([]any); !ok || len(caps) != 1 {
+		t.Fatalf("expected m365 capabilities [files], got %#v", m365["capabilities"])
 	}
 }
