@@ -150,7 +150,7 @@ kafclaw install      # copies to /usr/local/bin
 |------|---------|-------------|---------------|-------------|
 | Standalone | `make run` | `127.0.0.1` | No | Local binary, no Kafka/orchestrator |
 | Full | `make run-full` | `127.0.0.1` | No | + Kafka group + orchestrator |
-| Headless | `make run-headless` | `0.0.0.0` | Yes | LAN/cloud accessible, no GUI |
+| Headless | `make run-headless` | `0.0.0.0` | Dashboard API: Yes | LAN/cloud accessible, no GUI |
 | Remote | `make electron-start-remote` | N/A | N/A | Electron UI connects to headless server |
 
 ### LAN / Remote Access
@@ -170,6 +170,11 @@ Then access from another machine:
 http://<server-ip>:18791/          # Dashboard
 http://<server-ip>:18790/chat      # API
 ```
+
+Important auth scope note:
+
+- `gateway.authToken` protects dashboard API routes on port `18791` (except `/api/v1/status`).
+- `gateway.authToken` also protects `POST /chat` on port `18790`.
 
 **Common pitfalls:**
 - **Wrong protocol:** The gateway serves plain `http://`. Using `https://` in the browser will fail silently unless TLS is configured (`tlsCert`/`tlsKey` in gateway config).
