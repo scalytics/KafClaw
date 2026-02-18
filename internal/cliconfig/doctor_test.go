@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	skillruntime "github.com/KafClaw/KafClaw/internal/skills"
 )
 
 func TestRunDoctorWithMissingConfigWarnsNoFailure(t *testing.T) {
@@ -113,6 +115,22 @@ func TestDoctorFixMergesEnvFilesAndKeepsGatewayHost(t *testing.T) {
 	if report.HasFailures() {
 		t.Fatalf("expected no failures, got %#v", report)
 	}
+	var tombSyncPass bool
+	var scrubPass bool
+	for _, c := range report.Checks {
+		if c.Name == "env_tomb_sync" && c.Status == DoctorPass {
+			tombSyncPass = true
+		}
+		if c.Name == "env_sensitive_scrub" && c.Status == DoctorPass {
+			scrubPass = true
+		}
+	}
+	if !tombSyncPass {
+		t.Fatalf("expected env_tomb_sync pass check, got %#v", report.Checks)
+	}
+	if !scrubPass {
+		t.Fatalf("expected env_sensitive_scrub pass check, got %#v", report.Checks)
+	}
 
 	target := filepath.Join(home, ".config", "kafclaw", "env")
 	st, err := os.Stat(target)
@@ -127,8 +145,18 @@ func TestDoctorFixMergesEnvFilesAndKeepsGatewayHost(t *testing.T) {
 		t.Fatalf("read merged env file: %v", err)
 	}
 	text := string(data)
-	if !strings.Contains(text, "FOO=bar") || !strings.Contains(text, "OPENAI_API_KEY=from_openclaw") {
-		t.Fatalf("missing expected merged keys in env file: %s", text)
+	if !strings.Contains(text, "FOO=bar") {
+		t.Fatalf("missing non-sensitive key in merged env file: %s", text)
+	}
+	if strings.Contains(text, "OPENAI_API_KEY=from_openclaw") || strings.Contains(text, "MIKROBOT_GATEWAY_AUTH_TOKEN=abc123") {
+		t.Fatalf("expected sensitive keys scrubbed from merged env file: %s", text)
+	}
+	tombSecrets, err := skillruntime.LoadEnvSecretsFromLocalTomb()
+	if err != nil {
+		t.Fatalf("load tomb env secrets: %v", err)
+	}
+	if tombSecrets["OPENAI_API_KEY"] != "from_openclaw" {
+		t.Fatalf("expected OPENAI_API_KEY synced to tomb, got %#v", tombSecrets)
 	}
 
 	cfgAfter, err := os.ReadFile(filepath.Join(cfgDir, "config.json"))
@@ -208,5 +236,202 @@ func TestDoctorReportsSlackTeamsAccountDiagnostics(t *testing.T) {
 	}
 	if !slackWarn || !teamsWarn {
 		t.Fatalf("expected slack+teams account diagnostics warnings, got %#v", report.Checks)
+	}
+}
+
+func TestDoctorSkillsDiagnosticsWarnWhenMissingNodeAndClawhub(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := `{
+	  "skills": {"enabled": true, "externalInstalls": true},
+	  "channels": {"slack": {"enabled": true}}
+	}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	origPath := os.Getenv("PATH")
+	defer os.Setenv("HOME", origHome)
+	defer os.Setenv("PATH", origPath)
+	_ = os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("PATH", "/definitely/not/found")
+
+	report, err := RunDoctor()
+	if err != nil {
+		t.Fatalf("run doctor: %v", err)
+	}
+	var nodeWarn, clawhubWarn bool
+	for _, c := range report.Checks {
+		if c.Name == "skills_node" && c.Status == DoctorWarn {
+			nodeWarn = true
+		}
+		if c.Name == "skills_clawhub" && c.Status == DoctorWarn {
+			clawhubWarn = true
+		}
+	}
+	if !nodeWarn || !clawhubWarn {
+		t.Fatalf("expected skills/channel warnings, got %#v", report.Checks)
+	}
+}
+
+func TestDoctorSkillsRuntimePermissionsFailOnInsecureDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := `{"skills":{"enabled":true}}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	dirs, err := skillruntime.ResolveStateDirs()
+	if err != nil {
+		t.Fatalf("resolve state dirs: %v", err)
+	}
+	for _, dir := range []string{dirs.Root, dirs.TmpDir, dirs.ToolsDir, dirs.Quarantine, dirs.Installed, dirs.Snapshots, dirs.AuditDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	report, err := RunDoctor()
+	if err != nil {
+		t.Fatalf("run doctor: %v", err)
+	}
+	foundFail := false
+	for _, c := range report.Checks {
+		if c.Name == "skills_runtime_permissions" && c.Status == DoctorFail {
+			foundFail = true
+			break
+		}
+	}
+	if !foundFail {
+		t.Fatalf("expected skills_runtime_permissions failure, got %#v", report.Checks)
+	}
+}
+
+func TestDoctorWarnsWhenChannelOnboardingSkillInactive(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := `{
+	  "skills": {"enabled": false},
+	  "channels": {"slack": {"enabled": true}}
+	}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	report, err := RunDoctor()
+	if err != nil {
+		t.Fatalf("run doctor: %v", err)
+	}
+	foundWarn := false
+	for _, c := range report.Checks {
+		if c.Name == "channel_onboarding_skill" && c.Status == DoctorWarn {
+			foundWarn = true
+			break
+		}
+	}
+	if !foundWarn {
+		t.Fatalf("expected channel_onboarding_skill warning, got %#v", report.Checks)
+	}
+}
+
+func TestDoctorSkillsSecretPermissionsFailAndFix(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := `{"skills":{"enabled":true}}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	dirs, err := skillruntime.EnsureStateDirs()
+	if err != nil {
+		t.Fatalf("ensure state dirs: %v", err)
+	}
+	authDir := filepath.Join(dirs.ToolsDir, "auth", "google-workspace", "default")
+	if err := os.MkdirAll(authDir, 0o755); err != nil {
+		t.Fatalf("mkdir auth dir: %v", err)
+	}
+	tokenPath := filepath.Join(authDir, "token.json")
+	if err := os.WriteFile(tokenPath, []byte(`{"access_token":"x"}`), 0o644); err != nil {
+		t.Fatalf("write token: %v", err)
+	}
+	tombPath, err := skillruntime.ResolveLocalOAuthTombPath()
+	if err != nil {
+		t.Fatalf("resolve tomb path: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(tombPath), 0o700); err != nil {
+		t.Fatalf("mkdir tomb dir: %v", err)
+	}
+	if err := os.WriteFile(tombPath, []byte("badkey\n"), 0o644); err != nil {
+		t.Fatalf("write tomb key: %v", err)
+	}
+
+	report, err := RunDoctor()
+	if err != nil {
+		t.Fatalf("run doctor: %v", err)
+	}
+	foundFail := false
+	for _, c := range report.Checks {
+		if c.Name == "skills_secret_permissions" && c.Status == DoctorFail {
+			foundFail = true
+			break
+		}
+	}
+	if !foundFail {
+		t.Fatalf("expected skills_secret_permissions failure, got %#v", report.Checks)
+	}
+
+	report, err = RunDoctorWithOptions(DoctorOptions{Fix: true})
+	if err != nil {
+		t.Fatalf("run doctor --fix: %v", err)
+	}
+	foundPass := false
+	for _, c := range report.Checks {
+		if c.Name == "skills_secret_permissions" && c.Status == DoctorPass {
+			foundPass = true
+			break
+		}
+	}
+	if !foundPass {
+		t.Fatalf("expected skills_secret_permissions pass after fix, got %#v", report.Checks)
+	}
+	st, err := os.Stat(tokenPath)
+	if err != nil {
+		t.Fatalf("stat token path: %v", err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("expected token file mode 600 after fix, got %o", st.Mode().Perm())
+	}
+	tombSt, err := os.Stat(tombPath)
+	if err != nil {
+		t.Fatalf("stat tomb path: %v", err)
+	}
+	if tombSt.Mode().Perm() != 0o600 {
+		t.Fatalf("expected tomb key mode 600 after fix, got %o", tombSt.Mode().Perm())
 	}
 }
