@@ -19,38 +19,28 @@
 <link rel="apple-touch-icon" href="{{ seo_image | relative_url }}">
 
 <style>
-  .theme-switcher {
+  .theme-toggle-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    padding: 0.15rem;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    margin-left: 0.25rem;
     border: 1px solid var(--border-color);
-    border-radius: 999px;
-    background: var(--sidebar-color);
-  }
-
-  .theme-switcher button {
-    border: 0;
-    background: transparent;
+    border-radius: 9999px;
+    background: var(--body-background-color);
     color: var(--body-text-color);
-    font-size: 0.72rem;
-    line-height: 1;
-    border-radius: 999px;
-    padding: 0.3rem 0.5rem;
     cursor: pointer;
   }
 
-  .theme-switcher button:hover {
+  .theme-toggle-btn:hover {
     background: var(--feedback-color);
   }
 
-  .theme-switcher button[aria-pressed="true"] {
-    background: var(--btn-primary-color);
-    color: #fff;
-  }
-
-  .theme-switcher-label {
-    display: none;
+  .theme-toggle-btn svg {
+    width: 1rem;
+    height: 1rem;
   }
 </style>
 
@@ -63,69 +53,55 @@
     li.className = "aux-nav-list-item";
     li.id = "kafclaw-theme-switcher";
 
-    var wrap = document.createElement("div");
-    wrap.className = "theme-switcher";
-    wrap.setAttribute("role", "group");
-    wrap.setAttribute("aria-label", "Theme");
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "theme-toggle-btn";
+    btn.setAttribute("aria-label", "Toggle color theme");
 
-    var label = document.createElement("span");
-    label.className = "theme-switcher-label";
-    label.textContent = "Theme";
-    wrap.appendChild(label);
-
-    function makeBtn(value, text) {
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.dataset.theme = value;
-      btn.textContent = text;
-      btn.setAttribute("aria-pressed", "false");
-      return btn;
-    }
-
-    var btnAuto = makeBtn("auto", "Auto");
-    var btnLight = makeBtn("light", "Light");
-    var btnDark = makeBtn("dark", "Dark");
-    wrap.appendChild(btnAuto);
-    wrap.appendChild(btnLight);
-    wrap.appendChild(btnDark);
-
-    function currentTheme() {
+    function storedTheme() {
       try {
         var pref = localStorage.getItem("kafclaw-theme");
-        return pref === "light" || pref === "dark" ? pref : "auto";
+        return pref === "light" || pref === "dark" ? pref : null;
       } catch (e) {
-        return "auto";
+        return null;
+      }
+    }
+
+    function activeTheme() {
+      var pref = storedTheme();
+      if (pref) return pref;
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+      return "light";
+    }
+
+    function setIcon(theme) {
+      if (theme === "dark") {
+        btn.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zM1 13h3v-2H1v2zm10 9h2v-3h-2v3zm9.66-17.54l-1.41-1.41-1.8 1.79 1.42 1.42 1.79-1.8zM17.24 19.16l1.8 1.79 1.41-1.41-1.79-1.8-1.42 1.42zM20 11v2h3v-2h-3zM12 6a6 6 0 100 12 6 6 0 000-12zm0-5h-2v3h2V1z"/></svg>';
+        btn.title = "Switch to light mode";
+      } else {
+        btn.innerHTML =
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.75 15.5A9 9 0 1112.5 2.25a7 7 0 109.25 13.25z"/></svg>';
+        btn.title = "Switch to dark mode";
       }
     }
 
     function applyTheme(val) {
       try {
-        if (val === "auto") {
-          localStorage.removeItem("kafclaw-theme");
-          document.documentElement.removeAttribute("data-theme");
-        } else {
-          localStorage.setItem("kafclaw-theme", val);
-          document.documentElement.setAttribute("data-theme", val);
-        }
+        localStorage.setItem("kafclaw-theme", val);
+        document.documentElement.setAttribute("data-theme", val);
       } catch (e) {}
     }
 
-    function paintActive(val) {
-      [btnAuto, btnLight, btnDark].forEach(function (b) {
-        b.setAttribute("aria-pressed", b.dataset.theme === val ? "true" : "false");
-      });
-    }
-
-    [btnAuto, btnLight, btnDark].forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var val = btn.dataset.theme;
-        applyTheme(val);
-        paintActive(val);
-      });
+    btn.addEventListener("click", function () {
+      var now = activeTheme();
+      var next = now === "dark" ? "light" : "dark";
+      applyTheme(next);
+      setIcon(next);
     });
 
-    paintActive(currentTheme());
-    li.appendChild(wrap);
+    setIcon(activeTheme());
+    li.appendChild(btn);
     auxNav.appendChild(li);
   });
 </script>
