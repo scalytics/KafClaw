@@ -5,3 +5,5 @@ has_children: true
 ---
 
 Channel integrations and setup guides for connecting KafClaw to collaboration platforms.
+
+{% include section_children.html %}

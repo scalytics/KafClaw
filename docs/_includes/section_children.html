@@ -1,0 +1,9 @@
+{% assign section_title = include.parent | default: page.title %}
+{% assign children = site.pages | where: "parent", section_title | sort: "nav_order" %}
+{% if children.size > 0 %}
+## Pages in this section
+
+{% for child in children %}
+- [{{ child.title | default: child.name }}]({{ child.url | relative_url }})
+{% endfor %}
+{% endif %}

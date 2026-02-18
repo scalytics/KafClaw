@@ -5,3 +5,5 @@ has_children: true
 ---
 
 Operational runbooks and administration references for running KafClaw in development and production.
+
+{% include section_children.html %}

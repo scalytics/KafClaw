@@ -5,3 +5,5 @@ has_children: true
 ---
 
 System architecture references and security guidance for operators and maintainers.
+
+{% include section_children.html %}
