@@ -25,10 +25,10 @@ import (
 )
 
 const (
-	maxRemoteSkillBytes = 20 << 20 // 20 MiB
-	maxSkillFiles       = 1500
-	maxFileBytes        = 1 << 20 // 1 MiB per scanned file
-	maxArchiveEntryBytes = 5 << 20 // 5 MiB per archive entry
+	maxRemoteSkillBytes  = 20 << 20 // 20 MiB
+	maxSkillFiles        = 1500
+	maxFileBytes         = 1 << 20  // 1 MiB per scanned file
+	maxArchiveEntryBytes = 5 << 20  // 5 MiB per archive entry
 	maxArchiveTotalBytes = 40 << 20 // 40 MiB total extracted bytes
 	maxDownloadRedirects = 10
 )
