@@ -205,15 +205,46 @@ func TestIsSafeRelativePathMatrix(t *testing.T) {
 	}{
 		{"SKILL.md", true},
 		{"dir/file.txt", true},
+		{"dir\\file.txt", true},
 		{"", false},
 		{"/abs/path", false},
 		{"../up", false},
 		{"dir/../../x", false},
+		{"..\\up", false},
 		{"./", false},
 	}
 	for _, tc := range cases {
 		if got := isSafeRelativePath(tc.path); got != tc.ok {
 			t.Fatalf("isSafeRelativePath(%q)=%v want %v", tc.path, got, tc.ok)
+		}
+	}
+}
+
+func TestSanitizeArchiveEntryPath(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		hasErr bool
+	}{
+		{in: "SKILL.md", want: "SKILL.md"},
+		{in: "./dir/file.txt", want: "dir/file.txt"},
+		{in: "dir\\file.txt", want: "dir/file.txt"},
+		{in: "../evil", hasErr: true},
+		{in: "..\\evil", hasErr: true},
+		{in: "/abs/path", hasErr: true},
+	}
+	for _, tc := range cases {
+		got, err := sanitizeArchiveEntryPath(tc.in)
+		if tc.hasErr && err == nil {
+			t.Fatalf("sanitizeArchiveEntryPath(%q) expected error", tc.in)
+		}
+		if !tc.hasErr {
+			if err != nil {
+				t.Fatalf("sanitizeArchiveEntryPath(%q) unexpected error: %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("sanitizeArchiveEntryPath(%q)=%q want %q", tc.in, got, tc.want)
+			}
 		}
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -478,8 +479,8 @@ func unpackZIP(data []byte) ([]sourceFile, error) {
 		if totalRead > maxArchiveTotalBytes {
 			return nil, fmt.Errorf("archive extracted size exceeds max total (%d bytes)", maxArchiveTotalBytes)
 		}
-		name := filepath.ToSlash(strings.TrimPrefix(f.Name, "./"))
-		if !isSafeRelativePath(name) {
+		name, err := sanitizeArchiveEntryPath(f.Name)
+		if err != nil {
 			return nil, fmt.Errorf("unsafe archive path: %s", f.Name)
 		}
 		rc, err := f.Open()
@@ -532,8 +533,8 @@ func unpackTarGZ(data []byte) ([]sourceFile, error) {
 			if totalRead > maxArchiveTotalBytes {
 				return nil, fmt.Errorf("archive extracted size exceeds max total (%d bytes)", maxArchiveTotalBytes)
 			}
-			name := filepath.ToSlash(strings.TrimPrefix(hdr.Name, "./"))
-			if !isSafeRelativePath(name) {
+			name, err := sanitizeArchiveEntryPath(hdr.Name)
+			if err != nil {
 				return nil, fmt.Errorf("unsafe archive path: %s", hdr.Name)
 			}
 			b, err := io.ReadAll(io.LimitReader(tr, maxArchiveEntryBytes+1))
@@ -552,18 +553,38 @@ func unpackTarGZ(data []byte) ([]sourceFile, error) {
 }
 
 func isSafeRelativePath(p string) bool {
-	p = filepath.ToSlash(strings.TrimSpace(p))
+	_, err := sanitizeArchiveEntryPath(p)
+	return err == nil
+}
+
+func sanitizeArchiveEntryPath(raw string) (string, error) {
+	p := strings.TrimSpace(raw)
 	if p == "" {
-		return false
+		return "", errors.New("path is empty")
 	}
+	p = strings.ReplaceAll(p, "\\", "/")
+	p = strings.TrimPrefix(p, "./")
 	if strings.HasPrefix(p, "/") {
-		return false
+		return "", errors.New("absolute path is not allowed")
 	}
-	clean := filepath.ToSlash(filepath.Clean(p))
-	if clean == "." || strings.HasPrefix(clean, "../") || strings.Contains(clean, "/../") {
-		return false
+	if strings.ContainsRune(p, 0) {
+		return "", errors.New("path contains NUL byte")
 	}
-	return true
+	segments := strings.Split(p, "/")
+	for _, seg := range segments {
+		if seg == ".." {
+			return "", errors.New("path traversal segment is not allowed")
+		}
+	}
+	clean := path.Clean(p)
+	clean = strings.TrimPrefix(clean, "./")
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", errors.New("path resolves outside skill root")
+	}
+	if filepath.IsAbs(clean) || filepath.VolumeName(clean) != "" {
+		return "", errors.New("absolute/volume path is not allowed")
+	}
+	return clean, nil
 }
 
 func isTextContent(b []byte) bool {
