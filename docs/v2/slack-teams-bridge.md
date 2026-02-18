@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # Slack + Teams Bridge
 
 This bridge provides pairing and message flow for Slack and Microsoft Teams with KafClaw.

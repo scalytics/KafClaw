@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # KafClaw Security Documentation
 
 **Created:** 2026-02-16

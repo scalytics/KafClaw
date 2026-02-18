@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # KafClaw Architecture — Overview
 
 A quick reference for the KafClaw system architecture. For the comprehensive deep-dive, see [architecture-detailed.md](./architecture-detailed.md).

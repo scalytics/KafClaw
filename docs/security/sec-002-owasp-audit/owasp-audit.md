@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # OWASP Security Audit - KafClaw
 
 **Date:** 2026-02-16

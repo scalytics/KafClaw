@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # Operations and Maintenance
 
 Operational runbook for keeping KafClaw healthy in dev and production-like setups.

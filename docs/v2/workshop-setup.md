@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # Workshop Setup — 4-Agent Group Deployment
 
 Deploy a KafClaw Workshop: 1 desktop Electron agent (Mac) + 3 headless Docker agents sharing one gateway and one KafScale bus.

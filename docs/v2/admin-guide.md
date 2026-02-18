@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # KafClaw Administration Guide
 
 Comprehensive reference for deploying, configuring, securing, and operating KafClaw.

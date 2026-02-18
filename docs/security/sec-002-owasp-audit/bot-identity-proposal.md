@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # Bot Identity Proposal - KafClaw
 
 **Date:** 2026-02-16

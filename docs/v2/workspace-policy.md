@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # Workspace Policy
 
 > See also: [FR-025 Workspace Policy](../requirements/FR-025-workspace-policy.md)

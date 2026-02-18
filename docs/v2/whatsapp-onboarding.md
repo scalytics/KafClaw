@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # WhatsApp Onboarding — Buddy Access
 
 End-to-end guide for connecting a buddy to your KafClaw instance via WhatsApp.

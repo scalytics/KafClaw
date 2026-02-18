@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # Release Process
 
 > See also: [FR-017 Build/Test Strategy](../requirements/FR-017-build-test-strategy.md)

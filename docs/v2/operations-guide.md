@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # KafClaw Operations Guide
 
 Build, deploy, monitor, and operate KafClaw.

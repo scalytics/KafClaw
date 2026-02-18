@@ -1,3 +1,7 @@
+---
+parent: v2 Docs
+---
+
 # Architecture: Timeline and Memory
 
 > See also: [FR-019 Memory Architecture](../requirements/FR-019-memory-architecture.md), [FR-020 Memory Research Insights](../requirements/FR-020-memory-research-insights.md)
