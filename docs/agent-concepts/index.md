@@ -1,6 +1,7 @@
 ---
 title: Agent Concepts
-nav_order: 3
+parent: Guides
+nav_order: 1
 has_children: true
 ---
 
