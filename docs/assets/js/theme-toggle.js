@@ -9,6 +9,9 @@
   }
 
   function activeTheme() {
+    var attr = document.documentElement.getAttribute("data-theme");
+    if (attr === "dark" || attr === "light") return attr;
+
     var pref = storedTheme();
     if (pref) return pref;
     if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
