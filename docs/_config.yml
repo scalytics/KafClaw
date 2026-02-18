@@ -1,8 +1,15 @@
 title: KafClaw Docs
 description: KafClaw product, operations, and administration documentation.
-remote_theme: pages-themes/cayman@v0.2.0
+remote_theme: just-the-docs/just-the-docs
 plugins:
   - jekyll-remote-theme
 markdown: kramdown
 kramdown:
   input: GFM
+search_enabled: true
+heading_anchors: true
+back_to_top: true
+back_to_top_text: "Back to top"
+aux_links:
+  "KafClaw on GitHub":
+    - "https://github.com/KafClaw/KafClaw"
