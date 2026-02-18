@@ -23,7 +23,8 @@ KafClaw is a Go-based agent runtime with three practical deployment modes:
 
 ## Start Here
 
-- [Getting Started](./start-here/getting-started/)
+- [Getting Started](./start-here/)
+- [Getting Started Guide](./start-here/getting-started/)
 - [User Manual](./start-here/user-manual/)
 
 ## Guides

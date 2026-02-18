@@ -1,7 +1,7 @@
 ---
-title: Getting Started
-nav_order: 2
-has_children: true
+title: Getting Started Guide
+parent: Getting Started
+nav_order: 1
 ---
 
 # Getting Started
