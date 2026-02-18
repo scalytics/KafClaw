@@ -13,3 +13,9 @@ back_to_top_text: "Back to top"
 aux_links:
   "KafClaw on GitHub":
     - "https://github.com/KafClaw/KafClaw"
+footer_content: >-
+  <span style="font-size:0.78rem;line-height:1.35;">
+  Apache®, Apache Wayang®, Wayang®, Apache Kafka®, Kafka®, Apache Flink®, Flink®, Apache Iceberg®, Iceberg®, Apache Spark®, Spark® and associated open source project names are trademarks of the Apache Software Foundation.
+  <br>
+  Maintained and developed by Scalytics (<a href="https://www.scalytics.io">www.scalytics.io</a>).
+  </span>
