@@ -1,5 +1,6 @@
 ---
 parent: Operations and Admin
+title: Docker Compose Deployment
 ---
 
 # Docker Compose Deployment
@@ -56,3 +57,4 @@ Ports exposed:
 - Uses `kafclaw:local` image only (no remote pulls).
 - Base image: `alpine:3.20` with `ca-certificates`.
 - Entrypoint: `/usr/local/bin/kafclaw gateway`
+title: Docker Compose Deployment

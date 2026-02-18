@@ -1,5 +1,6 @@
 ---
 parent: Operations and Admin
+title: Release Process
 ---
 
 # Release Process
@@ -42,3 +43,4 @@ Release commits are created from the repository root (all staged changes include
 ## Script
 
 Release bump logic: `scripts/release.sh`
+title: Release Process

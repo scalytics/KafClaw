@@ -1,5 +1,6 @@
 ---
 parent: Architecture and Security
+title: Workspace Policy
 ---
 
 # Workspace Policy
@@ -85,3 +86,4 @@ Operational guidance:
 | System Repo | Cloned bot repo | Skills, Day2Day, identity |
 | Config | `~/.kafclaw/config.json` | Configuration |
 | Timeline DB | `~/.kafclaw/timeline.db` | Event log, settings |
+title: Workspace Policy

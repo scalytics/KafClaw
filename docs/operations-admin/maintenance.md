@@ -1,5 +1,6 @@
 ---
 parent: Operations and Admin
+title: Operations and Maintenance
 ---
 
 # Operations and Maintenance
@@ -153,3 +154,4 @@ Use trace views in dashboard to inspect these lifecycle events.
 - [Operations Guide](./operations-guide/)
 - [Admin Guide](./admin-guide/)
 - [Security Risks](../architecture-security/security-risks/)
+title: Operations and Maintenance

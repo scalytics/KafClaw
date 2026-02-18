@@ -1,5 +1,6 @@
 ---
 parent: Architecture and Security
+title: Security for Operators
 nav_order: 1
 ---
 
@@ -96,3 +97,4 @@ Test restore regularly on a clean host.
 ```
 
 Use these as part of daily operations and after any security-relevant change.
+title: Security for Operators

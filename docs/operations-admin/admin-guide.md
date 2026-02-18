@@ -1,5 +1,6 @@
 ---
 parent: Operations and Admin
+title: KafClaw Administration Guide
 ---
 
 # KafClaw Administration Guide
@@ -650,3 +651,4 @@ All persistent state in a single SQLite database:
 ```
 
 Uses WAL journal mode, foreign keys, and a 5-second busy timeout.
+title: KafClaw Administration Guide

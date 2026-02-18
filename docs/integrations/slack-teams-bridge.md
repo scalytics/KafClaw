@@ -1,5 +1,6 @@
 ---
 parent: Integrations
+title: Slack + Teams Bridge
 ---
 
 # Slack + Teams Bridge
@@ -264,3 +265,4 @@ Reason taxonomy:
 - `terminal:invalid_target_or_payload`
 - `terminal:max_retries_exceeded`
 - `terminal:send_failed`
+title: Slack + Teams Bridge

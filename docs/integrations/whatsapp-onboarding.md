@@ -1,5 +1,6 @@
 ---
 parent: Integrations
+title: WhatsApp Onboarding — Buddy Access
 ---
 
 # WhatsApp Onboarding — Buddy Access
@@ -94,3 +95,4 @@ kafclaw whatsapp-auth --deny 1234567890@s.whatsapp.net
 # List all auth entries
 kafclaw whatsapp-auth --list
 ```
+title: WhatsApp Onboarding — Buddy Access

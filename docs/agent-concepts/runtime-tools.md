@@ -1,5 +1,6 @@
 ---
 parent: Agent Concepts
+title: Runtime Tools and Capabilities
 ---
 
 # Runtime Tools and Capabilities
@@ -42,3 +43,4 @@ For operational policy and hardening, see:
 
 - `docs/architecture-security/security-risks.md`
 - `docs/operations-admin/admin-guide.md`
+title: Runtime Tools and Capabilities

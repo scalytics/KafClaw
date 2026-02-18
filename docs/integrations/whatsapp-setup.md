@@ -1,5 +1,6 @@
 ---
 parent: Integrations
+title: WhatsApp Setup (Default Deny)
 ---
 
 # WhatsApp Setup (Default Deny)
@@ -90,3 +91,4 @@ Compared with OpenClaw, currently limited:
 | `~/.kafclaw/whatsapp.db` | Session/device link persistence |
 | `~/.kafclaw/whatsapp-qr.png` | QR code for initial device linking |
 | `~/.kafclaw/timeline.db` | Allowlist, denylist, pending lists, pairing token |
+title: WhatsApp Setup (Default Deny)
