@@ -27,6 +27,19 @@
     color: #7a889f;
     margin-right: 0.6rem;
   }
+  .page-header .kc-topnav {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+  .page-header .kc-topnav a,
+  .page-header .kc-topnav .sep {
+    color: #ffffff;
+  }
+  .page-header .kc-topnav .back {
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.08);
+  }
 </style>
 <div class="kc-topnav">
   <button type="button" class="back" onclick="if (window.history.length > 1) { window.history.back(); } else { window.location.href='{{ '/' | relative_url }}'; }">Back</button>

@@ -1,7 +1,5 @@
 # KafClaw Documentation (v2)
 
-{% include topnav.html %}
-
 Primary v2 reference set for KafClaw.
 
 ## Quick Links
