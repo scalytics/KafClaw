@@ -14,6 +14,7 @@ import (
 
 	"github.com/KafClaw/KafClaw/internal/channels"
 	"github.com/KafClaw/KafClaw/internal/config"
+	skillruntime "github.com/KafClaw/KafClaw/internal/skills"
 )
 
 type DoctorStatus string
@@ -96,7 +97,7 @@ func RunDoctorWithOptions(opts DoctorOptions) (DoctorReport, error) {
 	}
 
 	if opts.Fix {
-		envPath, mergedKeys, fixErr := mergeDiscoveredEnvFiles()
+		envPath, mergedKeys, mergedKV, fixErr := mergeDiscoveredEnvFiles()
 		if fixErr != nil {
 			report.Checks = append(report.Checks, DoctorCheck{
 				Name:    "env_merge",
@@ -109,6 +110,48 @@ func RunDoctorWithOptions(opts DoctorOptions) (DoctorReport, error) {
 				Status:  DoctorPass,
 				Message: fmt.Sprintf("merged %d env key(s) into %s", mergedKeys, envPath),
 			})
+			sensitive := selectSensitiveEnvKeys(mergedKV)
+			written, tombErr := skillruntime.StoreEnvSecretsInLocalTomb(sensitive)
+			if tombErr != nil {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "env_tomb_sync",
+					Status:  DoctorFail,
+					Message: fmt.Sprintf("failed syncing sensitive env keys to tomb: %v", tombErr),
+				})
+				if len(sensitive) > 0 {
+					report.Checks = append(report.Checks, DoctorCheck{
+						Name:    "env_sensitive_scrub",
+						Status:  DoctorWarn,
+						Message: "skipped env sensitive-key scrub because tomb sync failed",
+					})
+				} else {
+					report.Checks = append(report.Checks, DoctorCheck{
+						Name:    "env_sensitive_scrub",
+						Status:  DoctorPass,
+						Message: "no sensitive env keys found to scrub",
+					})
+				}
+			} else {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "env_tomb_sync",
+					Status:  DoctorPass,
+					Message: fmt.Sprintf("synced %d sensitive env key(s) into tomb-managed encrypted store", written),
+				})
+				removed, scrubErr := scrubSensitiveEnvKeys(envPath, mergedKV, sensitive)
+				if scrubErr != nil {
+					report.Checks = append(report.Checks, DoctorCheck{
+						Name:    "env_sensitive_scrub",
+						Status:  DoctorFail,
+						Message: fmt.Sprintf("failed scrubbing sensitive env keys from %s: %v", envPath, scrubErr),
+					})
+				} else {
+					report.Checks = append(report.Checks, DoctorCheck{
+						Name:    "env_sensitive_scrub",
+						Status:  DoctorPass,
+						Message: fmt.Sprintf("removed %d sensitive env key(s) from %s after tomb sync", removed, envPath),
+					})
+				}
+			}
 		}
 	}
 
@@ -257,17 +300,283 @@ func RunDoctorWithOptions(opts DoctorOptions) (DoctorReport, error) {
 		})
 	}
 
+	appendSkillsDoctorChecks(&report, cfg, opts)
+
 	return report, nil
 }
 
-func mergeDiscoveredEnvFiles() (string, int, error) {
+func appendSkillsDoctorChecks(report *DoctorReport, cfg *config.Config, opts DoctorOptions) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Skills.Enabled && opts.Fix {
+		if err := fixSkillsPermissions(); err != nil {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "skills_permissions_fix",
+				Status:  DoctorFail,
+				Message: fmt.Sprintf("failed to enforce skills permissions: %v", err),
+			})
+		} else {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "skills_permissions_fix",
+				Status:  DoctorPass,
+				Message: "enforced skills directory/file permissions (0700/0600)",
+			})
+		}
+	}
+	if cfg.Skills.Enabled {
+		if !skillruntime.HasBinary("node") {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "skills_node",
+				Status:  DoctorWarn,
+				Message: "skills enabled but `node` is not in PATH",
+			})
+		} else {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "skills_node",
+				Status:  DoctorPass,
+				Message: "node is available for skills runtime",
+			})
+		}
+	} else {
+		report.Checks = append(report.Checks, DoctorCheck{
+			Name:    "skills_node",
+			Status:  DoctorPass,
+			Message: "skills are disabled",
+		})
+	}
+
+	if cfg.Skills.ExternalInstalls {
+		if !skillruntime.HasBinary("clawhub") {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "skills_clawhub",
+				Status:  DoctorWarn,
+				Message: "skills.externalInstalls enabled but `clawhub` is not in PATH",
+			})
+		} else {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "skills_clawhub",
+				Status:  DoctorPass,
+				Message: "clawhub is available",
+			})
+		}
+	} else {
+		report.Checks = append(report.Checks, DoctorCheck{
+			Name:    "skills_clawhub",
+			Status:  DoctorPass,
+			Message: "skills external installs are disabled",
+		})
+	}
+
+	if cfg.Skills.Enabled {
+		dirs, err := skillruntime.ResolveStateDirs()
+		if err != nil {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "skills_runtime_permissions",
+				Status:  DoctorFail,
+				Message: fmt.Sprintf("failed to resolve skills runtime dirs: %v", err),
+			})
+		} else {
+			insecure, missing := checkSkillsDirPermissions([]string{
+				dirs.Root, dirs.TmpDir, dirs.ToolsDir, dirs.Quarantine, dirs.Installed, dirs.Snapshots, dirs.AuditDir,
+			})
+			secretInsecure, secretMissing := checkSkillsSecretFilePermissions(dirs.ToolsDir)
+			if len(insecure) > 0 {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "skills_runtime_permissions",
+					Status:  DoctorFail,
+					Message: strings.Join(insecure, "; "),
+				})
+			} else if len(missing) > 0 {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "skills_runtime_permissions",
+					Status:  DoctorWarn,
+					Message: strings.Join(missing, "; "),
+				})
+			} else {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "skills_runtime_permissions",
+					Status:  DoctorPass,
+					Message: "skills runtime directory permissions are secure (0700)",
+				})
+			}
+			if len(secretInsecure) > 0 {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "skills_secret_permissions",
+					Status:  DoctorFail,
+					Message: strings.Join(secretInsecure, "; "),
+				})
+			} else if len(secretMissing) > 0 {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "skills_secret_permissions",
+					Status:  DoctorWarn,
+					Message: strings.Join(secretMissing, "; "),
+				})
+			} else {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "skills_secret_permissions",
+					Status:  DoctorPass,
+					Message: "skills secret file permissions are secure (0600)",
+				})
+			}
+		}
+	} else {
+		report.Checks = append(report.Checks, DoctorCheck{
+			Name:    "skills_runtime_permissions",
+			Status:  DoctorPass,
+			Message: "skills are disabled",
+		})
+		report.Checks = append(report.Checks, DoctorCheck{
+			Name:    "skills_secret_permissions",
+			Status:  DoctorPass,
+			Message: "skills are disabled",
+		})
+	}
+
+	channelEnabled := cfg.Channels.Slack.Enabled || cfg.Channels.MSTeams.Enabled || cfg.Channels.WhatsApp.Enabled
+	if channelEnabled && (!cfg.Skills.Enabled || !skillruntime.EffectiveSkillEnabled(cfg, "channel-onboarding")) {
+		report.Checks = append(report.Checks, DoctorCheck{
+			Name:    "channel_onboarding_skill",
+			Status:  DoctorWarn,
+			Message: "one or more channels are enabled but `channel-onboarding` skill is not active",
+		})
+	} else {
+		report.Checks = append(report.Checks, DoctorCheck{
+			Name:    "channel_onboarding_skill",
+			Status:  DoctorPass,
+			Message: "channel onboarding readiness is consistent",
+		})
+	}
+}
+
+func checkSkillsSecretFilePermissions(toolsDir string) (insecure []string, missing []string) {
+	insecure = make([]string, 0)
+	missing = make([]string, 0)
+	authRoot := filepath.Join(toolsDir, "auth")
+	if _, err := os.Stat(authRoot); err != nil {
+		if os.IsNotExist(err) {
+			missing = append(missing, fmt.Sprintf("%s missing", authRoot))
+			return insecure, missing
+		}
+		insecure = append(insecure, fmt.Sprintf("%s stat error: %v", authRoot, err))
+		return insecure, missing
+	}
+	_ = filepath.WalkDir(authRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			insecure = append(insecure, fmt.Sprintf("%s walk error: %v", path, err))
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		base := filepath.Base(path)
+		if filepath.Ext(path) != ".json" && base != "master.key" {
+			return nil
+		}
+		st, statErr := os.Stat(path)
+		if statErr != nil {
+			insecure = append(insecure, fmt.Sprintf("%s stat error: %v", path, statErr))
+			return nil
+		}
+		if st.Mode().Perm() != 0o600 {
+			insecure = append(insecure, fmt.Sprintf("%s permissions are %o (expected 600)", path, st.Mode().Perm()))
+		}
+		return nil
+	})
+	if tombPath, err := skillruntime.ResolveLocalOAuthTombPath(); err == nil {
+		if st, statErr := os.Stat(tombPath); statErr == nil {
+			if st.IsDir() {
+				insecure = append(insecure, fmt.Sprintf("%s is a directory (expected file)", tombPath))
+			} else if st.Mode().Perm() != 0o600 {
+				insecure = append(insecure, fmt.Sprintf("%s permissions are %o (expected 600)", tombPath, st.Mode().Perm()))
+			}
+		} else if !os.IsNotExist(statErr) {
+			insecure = append(insecure, fmt.Sprintf("%s stat error: %v", tombPath, statErr))
+		}
+	}
+	return insecure, missing
+}
+
+func fixSkillsPermissions() error {
+	dirs, err := skillruntime.EnsureStateDirs()
+	if err != nil {
+		return err
+	}
+	authRoot := filepath.Join(dirs.ToolsDir, "auth")
+	if _, err := os.Stat(authRoot); err != nil {
+		if os.IsNotExist(err) {
+			// Continue to tomb permission repair even when auth root is absent.
+		} else {
+			return err
+		}
+	} else {
+		if err := filepath.WalkDir(authRoot, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return os.Chmod(path, 0o700)
+			}
+			base := filepath.Base(path)
+			if filepath.Ext(path) == ".json" || base == "master.key" {
+				return os.Chmod(path, 0o600)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	tombPath, err := skillruntime.ResolveLocalOAuthTombPath()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(tombPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(tombPath), 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(filepath.Dir(tombPath), 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(tombPath, 0o600)
+}
+
+func checkSkillsDirPermissions(dirs []string) (insecure []string, missing []string) {
+	insecure = make([]string, 0)
+	missing = make([]string, 0)
+	for _, dir := range dirs {
+		st, err := os.Stat(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				missing = append(missing, fmt.Sprintf("%s missing", dir))
+				continue
+			}
+			insecure = append(insecure, fmt.Sprintf("%s stat error: %v", dir, err))
+			continue
+		}
+		if !st.IsDir() {
+			insecure = append(insecure, fmt.Sprintf("%s is not a directory", dir))
+			continue
+		}
+		if st.Mode().Perm() != 0o700 {
+			insecure = append(insecure, fmt.Sprintf("%s permissions are %o (expected 700)", dir, st.Mode().Perm()))
+		}
+	}
+	return insecure, missing
+}
+
+func mergeDiscoveredEnvFiles() (string, int, map[string]string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 	targetPath := filepath.Join(home, ".config", "kafclaw", "env")
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 
 	cwd, _ := os.Getwd()
@@ -292,7 +601,7 @@ func mergeDiscoveredEnvFiles() (string, int, error) {
 			if errorsIsNotExist(err) {
 				continue
 			}
-			return "", 0, fmt.Errorf("read %s: %w", src, err)
+			return "", 0, nil, fmt.Errorf("read %s: %w", src, err)
 		}
 		for k, v := range kv {
 			merged[k] = v
@@ -300,12 +609,61 @@ func mergeDiscoveredEnvFiles() (string, int, error) {
 	}
 
 	if err := writeEnvFileKV(targetPath, merged); err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
 	if err := os.Chmod(targetPath, 0o600); err != nil {
-		return "", 0, err
+		return "", 0, nil, err
 	}
-	return targetPath, len(merged), nil
+	return targetPath, len(merged), merged, nil
+}
+
+func selectSensitiveEnvKeys(in map[string]string) map[string]string {
+	out := map[string]string{}
+	for k, v := range in {
+		trimmedKey := strings.TrimSpace(k)
+		key := strings.ToUpper(trimmedKey)
+		if key == "" || strings.TrimSpace(v) == "" {
+			continue
+		}
+		switch {
+		case strings.Contains(key, "TOKEN"),
+			strings.Contains(key, "SECRET"),
+			strings.Contains(key, "PASSWORD"),
+			strings.Contains(key, "API_KEY"),
+			strings.Contains(key, "ACCESS_KEY"),
+			strings.Contains(key, "PRIVATE_KEY"),
+			strings.Contains(key, "CLIENT_SECRET"):
+			out[trimmedKey] = v
+		}
+	}
+	return out
+}
+
+func scrubSensitiveEnvKeys(path string, merged map[string]string, sensitive map[string]string) (int, error) {
+	if len(sensitive) == 0 {
+		return 0, nil
+	}
+	upperToActual := make(map[string]string, len(merged))
+	for k := range merged {
+		upperToActual[strings.ToUpper(strings.TrimSpace(k))] = k
+	}
+	removed := 0
+	for key := range sensitive {
+		normalized := strings.ToUpper(strings.TrimSpace(key))
+		actual, ok := upperToActual[normalized]
+		if !ok {
+			continue
+		}
+		delete(merged, actual)
+		removed++
+	}
+	if err := writeEnvFileKV(path, merged); err != nil {
+		return removed, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return removed, err
+	}
+	return removed, nil
 }
 
 func readEnvFileKV(path string) (map[string]string, error) {

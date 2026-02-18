@@ -16,6 +16,10 @@ run() {
 run "core policy + approvals + transport" \
   go test -count=1 ./internal/policy ./internal/approval ./internal/bus ./internal/session
 
+# Bundled skills must be shipped with valid artifacts.
+run "bundled skills artifact gate" \
+  bash scripts/check_bundled_skills.sh
+
 # Hard gate: critical logic must stay fully covered.
 run "critical coverage gate" \
   bash scripts/check_critical_coverage.sh

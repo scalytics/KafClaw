@@ -94,6 +94,21 @@ Test restore regularly on a clean host.
 ./kafclaw status
 ./kafclaw doctor
 ./kafclaw doctor --fix
+./kafclaw security check
+./kafclaw security audit --deep
+./kafclaw security fix --yes
 ```
 
 Use these as part of daily operations and after any security-relevant change.
+
+## 9. Skills and OAuth Security Notes
+
+- Prefer `skills.scope=selected` for least-privilege skill exposure.
+- Use `skills.runtimeIsolation=auto` (or `strict` when container runtime is guaranteed).
+- When using `strict`, `kafclaw security check` validates that `docker`/`podman` is actually usable by the current operator user.
+- OAuth skill tokens are encrypted at rest with local tomb-key management by default (`~/.config/kafclaw/tomb.rr`), with optional keyring/file backends.
+- `doctor --fix` moves sensitive env keys into tomb-managed encrypted storage and scrubs them from `~/.config/kafclaw/env`.
+- Security events and install decisions are chained into immutable-style audit logs under `~/.kafclaw/skills/audit/`.
+- For deployment-specific skill operations and remediations, refer to:
+  - [Skills](../skills/index.md)
+  - [KafClaw Management Guide](../operations-admin/manage-kafclaw.md)

@@ -2,20 +2,23 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/KafClaw/KafClaw/internal/config"
 	"github.com/KafClaw/KafClaw/internal/identity"
 	"github.com/KafClaw/KafClaw/internal/onboarding"
+	skillruntime "github.com/KafClaw/KafClaw/internal/skills"
 	"github.com/spf13/cobra"
 )
 
 var onboardCmd = &cobra.Command{
 	Use:   "onboard",
 	Short: "Initialize configuration and scaffold workspace",
-	Run:   runOnboard,
+	RunE:  runOnboard,
 }
 
 var onboardForce bool
@@ -43,10 +46,35 @@ var onboardSubModel string
 var onboardSubThinking string
 var onboardSubAllowAgents string
 var onboardNonInteractive bool
+var onboardAcceptRisk bool
+var onboardJSON bool
+var onboardSkipSkills bool
+var onboardInstallClawhub bool
+var onboardSkillsNodeMajor string
+var onboardGoogleWorkspaceRead string
+var onboardM365Read string
+
+type onboardingSkillsSummary struct {
+	Enabled      bool     `json:"enabled"`
+	StateDirsOK  bool     `json:"stateDirsOk"`
+	NodeFound    bool     `json:"nodeFound"`
+	ClawhubFound bool     `json:"clawhubFound"`
+	Remediation  []string `json:"remediation,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
+}
+
+type onboardingSummary struct {
+	ConfigPath string                  `json:"configPath"`
+	Workspace  string                  `json:"workspace"`
+	WorkRepo   string                  `json:"workRepo"`
+	Skills     onboardingSkillsSummary `json:"skills"`
+}
 
 func init() {
 	onboardCmd.Flags().BoolVarP(&onboardForce, "force", "f", false, "Overwrite existing config and soul files")
 	onboardCmd.Flags().BoolVar(&onboardNonInteractive, "non-interactive", false, "Run onboarding without prompts")
+	onboardCmd.Flags().BoolVar(&onboardAcceptRisk, "accept-risk", false, "Acknowledge risk for non-interactive onboarding")
+	onboardCmd.Flags().BoolVar(&onboardJSON, "json", false, "Output onboarding summary as JSON")
 	onboardCmd.Flags().StringVar(&onboardProfile, "profile", "", "Preset profile: local | local-kafka | remote")
 	onboardCmd.Flags().StringVar(&onboardMode, "mode", "", "Runtime mode: local | local-kafka | remote")
 	onboardCmd.Flags().StringVar(&onboardLLMPreset, "llm", "", "LLM setup: cli-token | openai-compatible | skip")
@@ -65,6 +93,11 @@ func init() {
 	onboardCmd.Flags().StringVar(&onboardSubAllowAgents, "subagents-allow-agents", "", "Comma-separated agent IDs allowed for sessions_spawn agentId (use '*' for any)")
 	onboardCmd.Flags().StringVar(&onboardSubModel, "subagents-model", "", "Default model for spawned subagents")
 	onboardCmd.Flags().StringVar(&onboardSubThinking, "subagents-thinking", "", "Default thinking level for spawned subagents")
+	onboardCmd.Flags().BoolVar(&onboardSkipSkills, "skip-skills", false, "Skip skills bootstrap")
+	onboardCmd.Flags().BoolVar(&onboardInstallClawhub, "install-clawhub", true, "Install clawhub via npm if missing during skills bootstrap")
+	onboardCmd.Flags().StringVar(&onboardSkillsNodeMajor, "skills-node-major", "20", "Node major version to pin in .nvmrc for skills")
+	onboardCmd.Flags().StringVar(&onboardGoogleWorkspaceRead, "google-workspace-read", "", "Preconfigure google-workspace capabilities (mail,calendar,drive,all)")
+	onboardCmd.Flags().StringVar(&onboardM365Read, "m365-read", "", "Preconfigure m365 capabilities (mail,calendar,files,all)")
 	onboardCmd.Flags().BoolVar(&onboardSystemd, "systemd", false, "Install systemd service + override + env file (Linux)")
 	onboardCmd.Flags().StringVar(&onboardServiceUser, "service-user", "kafclaw", "Service user for systemd setup")
 	onboardCmd.Flags().StringVar(&onboardServiceBinary, "service-binary", "/usr/local/bin/kafclaw", "kafclaw binary path for systemd ExecStart")
@@ -74,11 +107,14 @@ func init() {
 	rootCmd.AddCommand(onboardCmd)
 }
 
-func runOnboard(cmd *cobra.Command, args []string) {
+func runOnboard(cmd *cobra.Command, args []string) error {
+	if onboardNonInteractive && !onboardAcceptRisk {
+		return fmt.Errorf("non-interactive onboarding requires --accept-risk")
+	}
+
 	printHeader("🚀 KafClaw Onboard")
 	fmt.Println("Initializing KafClaw...")
 
-	// 1. Config file
 	cfgPath, _ := config.ConfigPath()
 
 	if _, err := os.Stat(cfgPath); err == nil && !onboardForce {
@@ -93,7 +129,6 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// 2. Load config (with expanded paths) for scaffolding
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Printf("Config warning: %v (using defaults)\n", err)
@@ -102,7 +137,6 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		cfg = config.DefaultConfig()
 	}
 
-	// 2.1 Guided mode/provider onboarding
 	if err := onboarding.RunProfileWizard(cfg, cmd.InOrStdin(), cmd.OutOrStdout(), onboarding.WizardParams{
 		Profile:          onboardProfile,
 		Mode:             onboardMode,
@@ -125,7 +159,7 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		NonInteractive:   onboardNonInteractive,
 	}); err != nil {
 		fmt.Printf("Onboarding wizard error: %v\n", err)
-		return
+		return nil
 	}
 
 	fmt.Fprintln(cmd.OutOrStdout(), onboarding.BuildProfileSummary(cfg))
@@ -134,20 +168,19 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		ok, err := onboarding.ConfirmApply(confirmReader, cmd.OutOrStdout())
 		if err != nil {
 			fmt.Printf("Onboarding confirmation error: %v\n", err)
-			return
+			return nil
 		}
 		if !ok {
 			fmt.Println("Onboarding aborted before writing config.")
-			return
+			return nil
 		}
 	}
 	if err := config.Save(cfg); err != nil {
 		fmt.Printf("Error saving configured onboarding profile: %v\n", err)
-		return
+		return nil
 	}
 	fmt.Printf("Updated configuration at: %s\n", cfgPath)
 
-	// 3. Scaffold workspace soul files
 	fmt.Printf("\nWorkspace: %s\n", cfg.Paths.Workspace)
 	result, err := identity.ScaffoldWorkspace(cfg.Paths.Workspace, onboardForce)
 	if err != nil {
@@ -164,7 +197,6 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// 4. Ensure work repo directories
 	if warn, err := config.EnsureWorkRepo(cfg.Paths.WorkRepoPath); err != nil {
 		fmt.Printf("Work repo error: %v\n", err)
 	} else {
@@ -174,15 +206,117 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	skillsSummary := onboardingSkillsSummary{
+		Enabled:      cfg.Skills.Enabled,
+		NodeFound:    skillruntime.HasBinary("node"),
+		ClawhubFound: skillruntime.HasBinary("clawhub"),
+	}
+	hasCapabilitySelection := strings.TrimSpace(onboardGoogleWorkspaceRead) != "" || strings.TrimSpace(onboardM365Read) != ""
+	if hasCapabilitySelection {
+		if cfg.Skills.Entries == nil {
+			cfg.Skills.Entries = map[string]config.SkillEntryConfig{}
+		}
+		if strings.TrimSpace(onboardGoogleWorkspaceRead) != "" {
+			caps, err := parseCapabilitySelection(onboardGoogleWorkspaceRead, map[string]struct{}{
+				"mail": {}, "calendar": {}, "drive": {}, "all": {},
+			})
+			if err != nil {
+				return fmt.Errorf("invalid --google-workspace-read: %w", err)
+			}
+			entry := cfg.Skills.Entries["google-workspace"]
+			entry.Enabled = true
+			entry.Capabilities = caps
+			cfg.Skills.Entries["google-workspace"] = entry
+		}
+		if strings.TrimSpace(onboardM365Read) != "" {
+			caps, err := parseCapabilitySelection(onboardM365Read, map[string]struct{}{
+				"mail": {}, "calendar": {}, "files": {}, "all": {},
+			})
+			if err != nil {
+				return fmt.Errorf("invalid --m365-read: %w", err)
+			}
+			entry := cfg.Skills.Entries["m365"]
+			entry.Enabled = true
+			entry.Capabilities = caps
+			cfg.Skills.Entries["m365"] = entry
+		}
+	}
+	if onboardSkipSkills {
+		fmt.Println("\nSkills bootstrap: skipped (--skip-skills)")
+	} else {
+		enableSkills := onboardNonInteractive
+		if hasCapabilitySelection {
+			enableSkills = true
+		}
+		if !onboardNonInteractive {
+			fmt.Print("\nEnable skills now? [Y/n]: ")
+			confirmReader := bufio.NewReader(cmd.InOrStdin())
+			line, _ := confirmReader.ReadString('\n')
+			answer := strings.TrimSpace(strings.ToLower(line))
+			enableSkills = answer == "" || answer == "y" || answer == "yes"
+		}
+		if enableSkills {
+			cfg.Skills.Enabled = true
+			skillsSummary.Enabled = true
+			if cfg.Skills.NodeManager == "" {
+				cfg.Skills.NodeManager = "npm"
+			}
+			if err := config.Save(cfg); err != nil {
+				fmt.Printf("Skills bootstrap warning: failed saving config: %v\n", err)
+				skillsSummary.Warnings = append(skillsSummary.Warnings, err.Error())
+			}
+			if _, err := skillruntime.EnsureStateDirs(); err != nil {
+				fmt.Printf("Skills bootstrap warning: failed creating secure dirs: %v\n", err)
+				skillsSummary.Warnings = append(skillsSummary.Warnings, err.Error())
+			} else {
+				skillsSummary.StateDirsOK = true
+			}
+			if _, err := skillruntime.EnsureNVMRC(cfg.Paths.WorkRepoPath, onboardSkillsNodeMajor); err != nil {
+				fmt.Printf("Skills bootstrap warning: failed writing .nvmrc: %v\n", err)
+				skillsSummary.Warnings = append(skillsSummary.Warnings, err.Error())
+			}
+			skillsSummary.NodeFound = skillruntime.HasBinary("node")
+			if !skillsSummary.NodeFound {
+				fmt.Println("Skills bootstrap warning: node not found in PATH; install Node.js and run 'kafclaw skills enable'.")
+				skillsSummary.Remediation = append(skillsSummary.Remediation, "Install Node.js and rerun `kafclaw skills enable`.")
+			} else if err := skillruntime.EnsureClawhub(onboardInstallClawhub); err != nil {
+				fmt.Printf("Skills bootstrap warning: %v\n", err)
+				skillsSummary.Warnings = append(skillsSummary.Warnings, err.Error())
+				skillsSummary.Remediation = append(skillsSummary.Remediation, "Install clawhub (`npm install -g --ignore-scripts clawhub`) or rerun with --install-clawhub.")
+			}
+			skillsSummary.ClawhubFound = skillruntime.HasBinary("clawhub")
+			fmt.Println("Skills bootstrap complete. Use 'kafclaw skills list' to inspect status.")
+		} else {
+			fmt.Println("\nSkills bootstrap: not enabled")
+		}
+	}
+	if hasCapabilitySelection {
+		if err := config.Save(cfg); err != nil {
+			fmt.Printf("Skills capability configuration warning: failed saving config: %v\n", err)
+			skillsSummary.Warnings = append(skillsSummary.Warnings, err.Error())
+		}
+	}
+
 	fmt.Println("\nNext steps:")
 	fmt.Println("1. Review ~/.kafclaw/config.json and ~/.config/kafclaw/env.")
 	fmt.Println("2. Customize soul files in your workspace (SOUL.md, USER.md, etc.)")
 	fmt.Println("3. Run 'kafclaw agent -m \"hello\"' to test.")
 
+	if onboardJSON {
+		summary := onboardingSummary{
+			ConfigPath: cfgPath,
+			Workspace:  cfg.Paths.Workspace,
+			WorkRepo:   cfg.Paths.WorkRepoPath,
+			Skills:     skillsSummary,
+		}
+		data, _ := json.MarshalIndent(summary, "", "  ")
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	}
+
 	if onboardSystemd {
 		if runtime.GOOS != "linux" {
 			fmt.Println("\nSystemd setup is only supported on Linux.")
-			return
+			return nil
 		}
 		result, err := onboarding.SetupSystemdGateway(onboarding.SetupOptions{
 			ServiceUser: onboardServiceUser,
@@ -194,7 +328,7 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		})
 		if err != nil {
 			fmt.Printf("\nSystemd setup failed: %v\n", err)
-			return
+			return nil
 		}
 
 		fmt.Println("\nSystemd setup complete:")
@@ -206,4 +340,5 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		fmt.Printf("  + Env file: %s\n", result.EnvPath)
 		fmt.Println("  Next (as root): systemctl daemon-reload && systemctl enable --now kafclaw-gateway.service")
 	}
+	return nil
 }

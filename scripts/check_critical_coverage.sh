@@ -88,4 +88,57 @@ if [[ "$run_gateway_pct" != "100.0" ]]; then
   exit 1
 fi
 
+echo ""
+echo "==> skills hardening regression suite"
+go test -count=1 -run "TestScannerSeverityMapping|TestValidatePolicyURLMatrix|TestArchiveExtractionGuards|TestEnforceRuntimePolicyMatrix|TestInstallAndUpdateSkill|TestUpdateSkillsFailureKeepsExistingInstall" ./internal/skills
+go test -count=1 -run "TestSkillsEnableDisableLifecycleConfigPersistence|TestOnboardNonInteractiveRequiresAcceptRisk|TestOnboardJSONSummary|TestOnboardSkillsBootstrapPath" ./internal/cli
+
+echo ""
+echo "==> skills critical function coverage (must be 100%)"
+go test -count=1 -coverprofile=/tmp/skills_critical.cover.out ./internal/skills >/tmp/skills_critical.cover.log
+cat /tmp/skills_critical.cover.log
+
+check_skills_func_100() {
+  local file_re="$1"
+  local fn="$2"
+  local pct
+  pct="$(go tool cover -func=/tmp/skills_critical.cover.out | awk -v file_re="$file_re" -v fn="$fn" '$1 ~ file_re && $2==fn {gsub("%","",$3); print $3}' | head -n 1)"
+  if [[ -z "$pct" ]]; then
+    echo "ERROR: could not find skills function coverage for $fn" >&2
+    exit 1
+  fi
+  if [[ "$pct" != "100.0" ]]; then
+    echo "ERROR: skills critical function $fn coverage is $pct%, expected 100.0%" >&2
+    exit 1
+  fi
+}
+
+check_skills_func_100 "internal/skills/runtime.go:" enforceRuntimePolicy
+check_skills_func_100 "internal/skills/verify.go:" validatePolicyURL
+check_skills_func_100 "internal/skills/verify.go:" isSafeRelativePath
+
+echo ""
+echo "==> non-critical touched package coverage (must be >80%)"
+check_pkg_min() {
+  local pkg="$1"
+  local min="$2"
+  local out
+  out="$(go test -count=1 -cover "$pkg")"
+  echo "$out"
+  local pct
+  pct="$(echo "$out" | sed -n 's/.*coverage: \([0-9.]*\)% of statements.*/\1/p' | tail -n 1)"
+  if [[ -z "$pct" ]]; then
+    echo "ERROR: failed to parse coverage for $pkg" >&2
+    exit 1
+  fi
+  awk -v p="$pct" -v m="$min" 'BEGIN { if (p <= m) exit 1 }' || {
+    echo "ERROR: non-critical package $pkg coverage is $pct%, expected >$min%" >&2
+    exit 1
+  }
+}
+
+check_pkg_min ./internal/config 80
+check_pkg_min ./internal/cliconfig 80
+check_pkg_min ./internal/agent 80
+
 echo "Critical coverage gate passed."

@@ -14,9 +14,11 @@ Operator-focused guide for managing KafClaw from CLI and runtime endpoints.
 | `kafclaw onboard` | Initialize config and scaffold workspace identity files |
 | `kafclaw gateway` | Run full gateway (API, dashboard, channels, memory, group/orchestrator when enabled) |
 | `kafclaw status` | Quick operational status: config, providers, channels, pairing, policy diagnostics |
-| `kafclaw doctor` | Run setup and config diagnostics |
+| `kafclaw doctor` | Run setup/config diagnostics including skills readiness checks |
+| `kafclaw security` | Unified security checks/audit/fix (`check`, `audit --deep`, `fix --yes`) |
 | `kafclaw config` | Low-level dotted-path config read/write/unset |
-| `kafclaw configure` | Guided updates for selected settings (currently subagent allowlist) |
+| `kafclaw configure` | Guided/non-interactive config updates (subagents + skills toggles) |
+| `kafclaw skills` | Skills lifecycle (`enable/disable/list/status/verify/install/update/auth/prereq`) |
 | `kafclaw group` | Join/leave/status/members for Kafka collaboration group |
 | `kafclaw kshark` | Kafka connectivity and protocol diagnostics |
 | `kafclaw agent -m` | Single-shot direct CLI interaction with agent loop |
@@ -54,6 +56,7 @@ Then verify:
 ./kafclaw onboard --non-interactive --profile local --llm skip
 ./kafclaw onboard --non-interactive --profile local-kafka --kafka-brokers localhost:9092 --group-name kafclaw --agent-id agent-local --role worker --llm skip
 ./kafclaw onboard --non-interactive --profile remote --llm openai-compatible --llm-api-base http://localhost:11434/v1 --llm-model llama3.1:8b
+./kafclaw onboard --non-interactive --accept-risk --skip-skills=false --install-clawhub --skills-node-major 20
 ```
 
 Mode effects applied by onboarding:
@@ -98,6 +101,8 @@ Highlights include:
 ```
 
 `doctor` returns non-zero when failing checks exist.
+When skills are enabled, doctor also checks `node`, `clawhub` (if external installs are enabled), runtime dir permissions, and channel-onboarding readiness.
+Use `kafclaw security` for consolidated security posture and deep skill audits.
 
 ## 5. Config Management
 
@@ -115,7 +120,17 @@ Highlights include:
 ./kafclaw configure
 ./kafclaw configure --subagents-allow-agents agent-main,agent-research --non-interactive
 ./kafclaw configure --clear-subagents-allow-agents --non-interactive
+./kafclaw configure --non-interactive --skills-enabled-set --skills-enabled=true --skills-node-manager npm
+./kafclaw configure --non-interactive --skills-scope selected
+./kafclaw configure --non-interactive --enable-skill github --disable-skill weather
 ```
+
+Skills policy defaults:
+
+- `skills.scope=selected` (least-privilege, recommended)
+- `skills.runtimeIsolation=auto` (use strict if container runtime is mandatory in your environment)
+
+See [Skills](../skills/index.md) for full skill policy details.
 
 ### LLM provider and token management
 
@@ -271,6 +286,30 @@ Core runtime files:
 
 This section applies to **direct HTTP clients** that call KafClaw API endpoints.
 For Slack/Teams/WhatsApp users, authentication is handled by provider bridge + pairing/allowlist controls, not by manually passing the gateway bearer token.
+
+## 12. Security Command Runbook
+
+```bash
+./kafclaw security check
+./kafclaw security audit --deep
+./kafclaw security fix --yes
+```
+
+Recommended usage:
+
+- `security check`: quick operational gate in CI/day-2 operations.
+- `security audit --deep`: include installed skill re-verification.
+- `security fix --yes`: apply safe remediations; re-run check after changes.
+- `doctor --fix`: merges env files, syncs sensitive env keys into tomb-managed encrypted storage, then scrubs those sensitive keys from `~/.config/kafclaw/env`.
+
+For security posture details, see [Security for Operators](../architecture-security/security-for-ops.md).
+For skills policy, OAuth keying, and source pinning syntax, see [Skills](../skills/index.md).
+
+Recommended CI gate:
+
+```bash
+go run ./cmd/kafclaw security check
+```
 
 When `KAFCLAW_GATEWAY_AUTH_TOKEN` (or `gateway.authToken`) is set, direct clients do not auto-receive tokens.
 Operators must distribute tokens out-of-band (secure chat, secret manager, deployment env injection, etc.).

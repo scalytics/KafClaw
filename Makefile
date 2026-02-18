@@ -10,7 +10,7 @@ NPM_MIN_VERSION := 11
 HOST_GOMODCACHE := $(shell go env GOMODCACHE)
 HOST_GOCACHE := $(shell go env GOCACHE)
 
-.PHONY: help check bootstrap build run rerun test vet race commit-check test-smoke test-critical test-fuzz code-ql test-classification test-subagents-e2e install \
+.PHONY: help check bootstrap build run rerun test vet race fmt-check commit-check test-smoke test-critical test-fuzz code-ql test-classification test-subagents-e2e check-bundled-skills install \
 	release release-major release-minor release-patch dist-go \
 	docker-build docker-up docker-down docker-logs \
 	run-standalone run-full run-headless \
@@ -108,8 +108,19 @@ vet: ## Run go vet across all packages
 race: ## Run race-enabled tests across all packages
 	go test -race ./...
 
+fmt-check: ## Verify Go files are gofmt-formatted
+	@unformatted="$$(gofmt -l .)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "The following files are not gofmt-formatted:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+
 test-smoke: ## Run fast critical-path smoke tests (bug-finding first)
 	bash scripts/test_smoke.sh
+
+check-bundled-skills: ## Validate that bundled skills/docs artifacts exist
+	bash scripts/check_bundled_skills.sh
 
 test-critical: ## Enforce 100% coverage on critical logic
 	bash scripts/check_critical_coverage.sh
@@ -120,7 +131,7 @@ test-fuzz: ## Run fuzz tests for critical guard logic
 code-ql: ## Run local CodeQL (Go + JS/TS + Actions) and emit SARIF under .tmp/codeql/
 	bash scripts/codeql_local.sh
 
-commit-check: check vet race test-fuzz code-ql ## Run pre-commit quality gates (vet, race, fuzz, CodeQL)
+commit-check: check fmt-check vet race test-fuzz code-ql ## Run pre-commit quality gates (fmt, vet, race, fuzz, CodeQL)
 	@echo "commit-check completed."
 
 test-classification: ## Run internal/external message classification E2E test (verbose)

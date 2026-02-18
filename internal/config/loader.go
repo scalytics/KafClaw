@@ -193,6 +193,7 @@ func Load() (*Config, error) {
 	envconfig.Process("MIKROBOT_TOOLS_EXEC", &cfg.Tools.Exec)
 	envconfig.Process("MIKROBOT_TOOLS_WEB_SEARCH", &cfg.Tools.Web.Search)
 	envconfig.Process("MIKROBOT_TOOLS_SUBAGENTS", &cfg.Tools.Subagents)
+	envconfig.Process("MIKROBOT_SKILLS", &cfg.Skills)
 	legacyAgentDefaults := SubagentsToolConfig{}
 	if cfg.Agents != nil {
 		legacyAgentDefaults = cfg.Agents.Defaults.Subagents
@@ -222,6 +223,7 @@ func Load() (*Config, error) {
 	envconfig.Process("KAFCLAW_TOOLS_EXEC", &cfg.Tools.Exec)
 	envconfig.Process("KAFCLAW_TOOLS_WEB_SEARCH", &cfg.Tools.Web.Search)
 	envconfig.Process("KAFCLAW_TOOLS_SUBAGENTS", &cfg.Tools.Subagents)
+	envconfig.Process("KAFCLAW_SKILLS", &cfg.Skills)
 	agentDefaults := SubagentsToolConfig{}
 	if cfg.Agents != nil {
 		agentDefaults = cfg.Agents.Defaults.Subagents
@@ -277,6 +279,38 @@ func Load() (*Config, error) {
 	}
 	if cfg.Tools.Subagents.ArchiveAfterMinutes <= 0 {
 		cfg.Tools.Subagents.ArchiveAfterMinutes = 60
+	}
+
+	if cfg.Skills.NodeManager == "" {
+		cfg.Skills.NodeManager = "npm"
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Skills.NodeManager)) {
+	case "npm", "pnpm", "bun":
+		cfg.Skills.NodeManager = strings.ToLower(strings.TrimSpace(cfg.Skills.NodeManager))
+	default:
+		cfg.Skills.NodeManager = "npm"
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Skills.Scope)) {
+	case "", "selected":
+		cfg.Skills.Scope = "selected"
+	case "all":
+		cfg.Skills.Scope = "all"
+	default:
+		cfg.Skills.Scope = "selected"
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Skills.RuntimeIsolation)) {
+	case "", "auto":
+		cfg.Skills.RuntimeIsolation = "auto"
+	case "host", "strict":
+		cfg.Skills.RuntimeIsolation = strings.ToLower(strings.TrimSpace(cfg.Skills.RuntimeIsolation))
+	default:
+		cfg.Skills.RuntimeIsolation = "auto"
+	}
+	if cfg.Skills.LinkPolicy.Mode == "" {
+		cfg.Skills.LinkPolicy.Mode = "allowlist"
+	}
+	if cfg.Skills.LinkPolicy.MaxLinksPerSkill <= 0 {
+		cfg.Skills.LinkPolicy.MaxLinksPerSkill = 20
 	}
 	if cfg.Agents != nil {
 		cfg.Agents.Defaults.Subagents = cfg.Tools.Subagents

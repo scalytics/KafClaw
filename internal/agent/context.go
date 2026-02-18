@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/KafClaw/KafClaw/internal/config"
 	"github.com/KafClaw/KafClaw/internal/group"
 	"github.com/KafClaw/KafClaw/internal/identity"
 	"github.com/KafClaw/KafClaw/internal/provider"
 	"github.com/KafClaw/KafClaw/internal/session"
+	"github.com/KafClaw/KafClaw/internal/skills"
 	"github.com/KafClaw/KafClaw/internal/tools"
 )
 
@@ -186,19 +188,37 @@ func (b *ContextBuilder) buildSkillsSummary() string {
 		sb.WriteString(fmt.Sprintf("- %s: %s\n", tool.Name(), tool.Description()))
 	}
 
-	// Auto-load skills from the bot system repo (not the work repo).
-	if skills := b.loadSystemRepoSkills(); skills != "" {
-		sb.WriteString("\n\nSystem repo skills:\n")
-		sb.WriteString(skills)
+	// Auto-load skills from the bot system repo (not the work repo) only when enabled.
+	if b.shouldLoadSystemRepoSkills() {
+		if skills := b.loadSystemRepoSkills(); skills != "" {
+			sb.WriteString("\n\nSystem repo skills:\n")
+			sb.WriteString(skills)
+		}
 	}
 
 	return sb.String()
+}
+
+func (b *ContextBuilder) shouldLoadSystemRepoSkills() bool {
+	cfg, err := config.Load()
+	if err != nil {
+		// Fail-open to preserve existing behavior if config cannot be loaded.
+		return true
+	}
+	if !cfg.Skills.Enabled {
+		return false
+	}
+	return cfg.Skills.AllowSystemRepoSkills
 }
 
 func (b *ContextBuilder) loadSystemRepoSkills() string {
 	base := b.systemRepoPath()
 	if base == "" {
 		return ""
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.DefaultConfig()
 	}
 
 	var sb strings.Builder
@@ -211,9 +231,13 @@ func (b *ContextBuilder) loadSystemRepoSkills() string {
 			if !e.IsDir() {
 				continue
 			}
+			name := strings.TrimSpace(e.Name())
+			if !skills.EffectiveSkillEnabled(cfg, name) {
+				continue
+			}
 			path := filepath.Join(skillsDir, e.Name(), "SKILL.md")
 			if data, err := os.ReadFile(path); err == nil {
-				sb.WriteString(fmt.Sprintf("\n## %s\n\n%s\n", e.Name(), string(data)))
+				sb.WriteString(fmt.Sprintf("\n## %s\n\n%s\n", name, string(data)))
 			}
 		}
 	}
@@ -252,9 +276,24 @@ func (b *ContextBuilder) systemRepoPath() string {
 	if abs, err := filepath.Abs(wsPath); err == nil {
 		wsPath = abs
 	}
-	path := filepath.Join(wsPath, "Bottibot-REPO-01")
-	if _, err := os.Stat(path); err == nil {
-		return path
+	candidates := []string{
+		filepath.Join(wsPath, "Bottibot-REPO-01"),
+		wsPath,
+		filepath.Dir(wsPath),
+	}
+	for _, path := range candidates {
+		if path == "" {
+			continue
+		}
+		if fi, err := os.Stat(filepath.Join(path, "skills")); err == nil && fi.IsDir() {
+			return path
+		}
+		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+			// Legacy fallback when system repo exists but has no skills dir yet.
+			if filepath.Base(path) == "Bottibot-REPO-01" {
+				return path
+			}
+		}
 	}
 	return ""
 }
