@@ -150,6 +150,12 @@ Rollback state from specific snapshot:
 - post-update health gates (`doctor`, security check)
 - config drift report
 
+Lifecycle event logs:
+
+- Critical onboarding/update/rollback phases append JSONL events to:
+  - `~/.kafclaw/lifecycle-events.jsonl`
+- Use this for troubleshooting automation/non-interactive lifecycle runs.
+
 ## 4. Onboarding and Modes
 
 ### Interactive
