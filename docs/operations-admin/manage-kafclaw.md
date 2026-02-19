@@ -88,12 +88,19 @@ Security behavior:
 - Checksum verification (`SHA256SUMS`) is always required.
 - Signature verification (`cosign`) is enabled by default.
 - Use `--no-signature-verify` only in constrained environments where `cosign` is unavailable.
+- Installer failures use structured error codes (for example `INSTALL_PREREQ_MISSING`, `INSTALL_DOWNLOAD_FAILED`) and include remediation text.
 
 Root install behavior:
 
 - Installer warns that root service install is a security risk.
 - If accepted, it creates non-root user `kafclaw` (Linux) for service runtime.
 - If declined (`n`), installer continues with root runtime and prints `Installing as root service.`
+
+Install verification path (automatic at end of install):
+
+- version check (`kafclaw version` / `kafclaw --version`)
+- PATH check (whether `kafclaw` resolves from current shell)
+- status check when config exists (`~/.kafclaw/config.json`), otherwise prints onboarding reminder
 
 ## 4. Onboarding and Modes
 

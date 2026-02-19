@@ -24,6 +24,14 @@ Reload shell config so `kafclaw` and completion are available in the current ter
 source ~/.zshrc   # or: source ~/.bashrc
 ```
 
+Quick verify:
+
+```bash
+kafclaw version
+# If you already onboarded:
+kafclaw status
+```
+
 Headless/unattended:
 
 ```bash
@@ -47,6 +55,12 @@ curl --fail --show-error --silent --location \
 ```
 
 For full install flags and operator-focused behavior (root handling, signature controls, unattended modes), see [KafClaw Management Guide](../operations-admin/manage-kafclaw/).
+
+Desktop app distribution:
+
+- The Electron desktop app is shipped as prebuilt release artifacts (for example `.dmg`, `.exe`, Linux package formats).
+- Download/install it separately from GitHub Releases when you want the desktop experience.
+- Default gateway/headless onboarding/install does not auto-install Electron dependencies.
 
 ## 2. Prerequisites (Source Build Path)
 
