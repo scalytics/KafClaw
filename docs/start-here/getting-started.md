@@ -204,6 +204,13 @@ To reconfigure provider/token later, run onboarding again (interactive) or use:
 - Use `--force` to overwrite existing config and identity templates
 - Gateway also auto-scaffolds missing identity files at startup if workspace is incomplete
 
+Minimal lifecycle flags:
+
+```bash
+./kafclaw onboard --reset-scope config --non-interactive --accept-risk --profile local --llm skip
+./kafclaw onboard --wait-for-gateway --health-timeout 20s
+```
+
 ## 5. Verify
 
 ```bash
@@ -247,6 +254,13 @@ sudo ./kafclaw onboard --systemd
 ```
 
 This can create service user, install unit files, and write runtime env file.
+
+After onboarding, manage service state with:
+
+```bash
+sudo ./kafclaw daemon status
+sudo ./kafclaw daemon restart
+```
 
 ## 8. Where Config Lives
 

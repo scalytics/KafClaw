@@ -128,7 +128,7 @@ Once the gateway is running:
 ## 3. CLI Reference
 
 KafClaw provides the following CLI commands. Run `kafclaw --help` for the full list.
-Core startup commands: `onboard`, `doctor`, `status`, `gateway`, `agent`, `config`.
+Core startup commands: `onboard`, `doctor`, `status`, `gateway`, `daemon`, `agent`, `config`.
 
 ### 3.1 `gateway`
 
@@ -174,8 +174,20 @@ Common onboarding profiles:
 
 Useful onboarding flags:
 - `--systemd` to install service/override/env (Linux)
+- `--reset-scope` (`none|config|full`) for deterministic reset behavior
+- `--wait-for-gateway` and `--health-timeout` for post-onboard health gating
+- `--skip-healthcheck` to bypass readiness checks in constrained automation
+- `--daemon-runtime` to persist daemon runtime label in config
 - `--subagents-max-spawn-depth`, `--subagents-max-children`, `--subagents-max-concurrent`
 - `--subagents-archive-minutes`, `--subagents-model`, `--subagents-thinking`
+
+Service lifecycle commands:
+
+```bash
+sudo kafclaw daemon install --activate
+sudo kafclaw daemon status
+sudo kafclaw daemon restart
+```
 
 Subagent runtime notes:
 - `sessions_spawn` accepts `runTimeoutSeconds` for per-run hard timeout

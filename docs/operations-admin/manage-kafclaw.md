@@ -18,7 +18,7 @@ Operator-focused guide for managing KafClaw from CLI and runtime endpoints.
 | `kafclaw security` | Unified security checks/audit/fix (`check`, `audit --deep`, `fix --yes`) |
 | `kafclaw config` | Low-level dotted-path config read/write/unset |
 | `kafclaw configure` | Guided/non-interactive config updates (subagents, skills, Kafka group security) |
-| `kafclaw skills` | Skills lifecycle (`enable/disable/list/status/verify/install/update/auth/prereq`) |
+| `kafclaw skills` | Skills lifecycle (`enable/disable/list/status/enable-skill/disable-skill/verify/install/update/exec/auth/prereq`) |
 | `kafclaw group` | Join/leave/status/members for Kafka collaboration group |
 | `kafclaw kshark` | Kafka connectivity and protocol diagnostics |
 | `kafclaw agent -m` | Single-shot direct CLI interaction with agent loop |
@@ -26,6 +26,7 @@ Operator-focused guide for managing KafClaw from CLI and runtime endpoints.
 | `kafclaw whatsapp-setup` | Configure WhatsApp auth and initial lists |
 | `kafclaw whatsapp-auth` | Approve/deny/list WhatsApp JIDs |
 | `kafclaw install` | Install local binary (`/usr/local/bin` as root, `~/.local/bin` as non-root) |
+| `kafclaw daemon` | Manage systemd service lifecycle (`install`, `uninstall`, `start`, `stop`, `restart`, `status`) |
 | `kafclaw update` | Update lifecycle (`plan`, `apply`, `backup`, `rollback`) |
 | `kafclaw completion` | Generate shell completion scripts (`bash|zsh|fish|powershell`) |
 | `kafclaw version` | Print build version |
@@ -190,6 +191,41 @@ Onboarding also scaffolds workspace files:
 - `IDENTITY.md`
 
 Use `--force` to overwrite existing config and scaffold files.
+
+Lifecycle flags (operator-focused):
+
+```bash
+./kafclaw onboard --reset-scope config --non-interactive --accept-risk --profile local --llm skip
+./kafclaw onboard --wait-for-gateway --health-timeout 20s
+./kafclaw onboard --skip-healthcheck
+./kafclaw onboard --daemon-runtime native
+```
+
+If onboarding installs systemd (`--systemd`), service activation is automatic by default.
+Disable auto-activation with `--systemd-activate=false`.
+
+## 4.1 Daemon / Service Lifecycle (Linux systemd)
+
+Install service and activate immediately:
+
+```bash
+sudo ./kafclaw daemon install --activate
+```
+
+Service operations:
+
+```bash
+sudo ./kafclaw daemon status
+sudo ./kafclaw daemon restart
+sudo ./kafclaw daemon stop
+sudo ./kafclaw daemon start
+```
+
+Uninstall service:
+
+```bash
+sudo ./kafclaw daemon uninstall
+```
 
 ## 5. Daily Health Checks
 

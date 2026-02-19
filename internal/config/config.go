@@ -223,6 +223,7 @@ type GatewayConfig struct {
 	AuthToken     string `json:"authToken" envconfig:"AUTH_TOKEN"`
 	TLSCert       string `json:"tlsCert" envconfig:"TLS_CERT"`
 	TLSKey        string `json:"tlsKey" envconfig:"TLS_KEY"`
+	DaemonRuntime string `json:"daemonRuntime" envconfig:"DAEMON_RUNTIME"`
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +417,7 @@ func DefaultConfig() *Config {
 			Host:          "127.0.0.1", // Secure default
 			Port:          18790,
 			DashboardPort: 18791,
+			DaemonRuntime: "native",
 		},
 		Tools: ToolsConfig{
 			Exec: ExecToolConfig{

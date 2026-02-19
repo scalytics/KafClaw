@@ -3,11 +3,14 @@ package cli
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/KafClaw/KafClaw/internal/cliconfig"
 	"github.com/KafClaw/KafClaw/internal/config"
@@ -64,6 +67,16 @@ var onboardGoogleWorkspaceRead string
 var onboardM365Read string
 var onboardGatewayPort int
 var onboardAllowNonLoopback bool
+var onboardResetScope string
+var onboardSkipHealthcheck bool
+var onboardWaitForGateway bool
+var onboardHealthTimeout time.Duration
+var onboardSystemdActivate bool
+var onboardDaemonRuntime string
+var onboardOS = runtime.GOOS
+var onboardCurrentEUID = os.Geteuid
+var onboardSetupSystemdFn = onboarding.SetupSystemdGateway
+var onboardActivateSystemdFn = onboarding.ActivateSystemdGateway
 
 type onboardingSkillsSummary struct {
 	Enabled      bool     `json:"enabled"`
@@ -75,10 +88,23 @@ type onboardingSkillsSummary struct {
 }
 
 type onboardingSummary struct {
-	ConfigPath string                  `json:"configPath"`
-	Workspace  string                  `json:"workspace"`
-	WorkRepo   string                  `json:"workRepo"`
-	Skills     onboardingSkillsSummary `json:"skills"`
+	ConfigPath  string                  `json:"configPath"`
+	Workspace   string                  `json:"workspace"`
+	WorkRepo    string                  `json:"workRepo"`
+	Mode        string                  `json:"mode"`
+	GatewayBind string                  `json:"gatewayBind"`
+	Skills      onboardingSkillsSummary `json:"skills"`
+	Health      onboardingHealthSummary `json:"health"`
+}
+
+type onboardingHealthSummary struct {
+	Skipped          bool   `json:"skipped"`
+	DoctorFailures   int    `json:"doctorFailures"`
+	WaitForGateway   bool   `json:"waitForGateway"`
+	GatewayReachable bool   `json:"gatewayReachable"`
+	GatewayURL       string `json:"gatewayUrl,omitempty"`
+	Timeout          string `json:"timeout,omitempty"`
+	Warning          string `json:"warning,omitempty"`
 }
 
 func init() {
@@ -119,9 +145,15 @@ func init() {
 	onboardCmd.Flags().IntVar(&onboardGatewayPort, "gateway-port", 0, "Gateway API port to persist in config (default: keep current)")
 	onboardCmd.Flags().BoolVar(&onboardAllowNonLoopback, "allow-non-loopback", false, "Acknowledge external/LAN gateway bind risk during onboarding")
 	onboardCmd.Flags().BoolVar(&onboardSystemd, "systemd", false, "Install systemd service + override + env file (Linux)")
+	onboardCmd.Flags().BoolVar(&onboardSystemdActivate, "systemd-activate", true, "After systemd install, run daemon-reload and enable --now")
 	onboardCmd.Flags().StringVar(&onboardServiceUser, "service-user", "kafclaw", "Service user for systemd setup")
 	onboardCmd.Flags().StringVar(&onboardServiceBinary, "service-binary", "/usr/local/bin/kafclaw", "kafclaw binary path for systemd ExecStart")
 	onboardCmd.Flags().IntVar(&onboardServicePort, "service-port", 18790, "Gateway port for systemd ExecStart")
+	onboardCmd.Flags().StringVar(&onboardDaemonRuntime, "daemon-runtime", "", "Daemon runtime label to persist in config (default: native)")
+	onboardCmd.Flags().StringVar(&onboardResetScope, "reset-scope", "none", "Reset onboarding state before apply: none|config|full")
+	onboardCmd.Flags().BoolVar(&onboardSkipHealthcheck, "skip-healthcheck", false, "Skip post-onboarding health gate checks")
+	onboardCmd.Flags().BoolVar(&onboardWaitForGateway, "wait-for-gateway", false, "Wait for gateway /healthz after onboarding")
+	onboardCmd.Flags().DurationVar(&onboardHealthTimeout, "health-timeout", 15*time.Second, "Timeout for post-onboarding health checks")
 	onboardCmd.Flags().StringVar(&onboardInstallRoot, "service-install-root", "/", "Installation root for systemd files (testing/packaging)")
 	_ = onboardCmd.Flags().MarkHidden("service-install-root")
 	rootCmd.AddCommand(onboardCmd)
@@ -146,6 +178,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println("Initializing KafClaw...")
 
 	cfgPath, _ := config.ConfigPath()
+	if err := applyOnboardResetScope(onboardResetScope, cfgPath); err != nil {
+		_ = emitLifecycleEvent("onboard", "reset", "error", err.Error(), map[string]any{"scope": onboardResetScope})
+		return err
+	}
+	if normalizeOnboardResetScope(onboardResetScope) != "none" {
+		_ = emitLifecycleEvent("onboard", "reset", "ok", "reset scope applied", map[string]any{"scope": onboardResetScope})
+	}
+
 	configExists := false
 	cfg := config.DefaultConfig()
 	if _, err := os.Stat(cfgPath); err == nil {
@@ -193,9 +233,18 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		_ = emitLifecycleEvent("onboard", "wizard", "error", err.Error(), nil)
 		return fmt.Errorf("onboarding wizard error: %w", err)
 	}
+	if err := normalizeOnboardPaths(cfg); err != nil {
+		return fmt.Errorf("onboarding path normalization failed: %w", err)
+	}
 
 	if onboardGatewayPort > 0 {
 		cfg.Gateway.Port = onboardGatewayPort
+	}
+	if strings.TrimSpace(onboardDaemonRuntime) != "" {
+		cfg.Gateway.DaemonRuntime = strings.TrimSpace(onboardDaemonRuntime)
+	}
+	if strings.TrimSpace(cfg.Gateway.DaemonRuntime) == "" {
+		cfg.Gateway.DaemonRuntime = "native"
 	}
 	if cfg.Gateway.Port <= 0 {
 		cfg.Gateway.Port = 18790
@@ -361,19 +410,8 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println("2. Customize soul files in your workspace (SOUL.md, USER.md, etc.)")
 	fmt.Println("3. Run 'kafclaw agent -m \"hello\"' to test.")
 
-	if onboardJSON {
-		summary := onboardingSummary{
-			ConfigPath: cfgPath,
-			Workspace:  cfg.Paths.Workspace,
-			WorkRepo:   cfg.Paths.WorkRepoPath,
-			Skills:     skillsSummary,
-		}
-		data, _ := json.MarshalIndent(summary, "", "  ")
-		fmt.Fprintln(cmd.OutOrStdout(), string(data))
-	}
-
 	if onboardSystemd {
-		if runtime.GOOS != "linux" {
+		if onboardOS != "linux" {
 			fmt.Println("\nSystemd setup is only supported on Linux.")
 			return nil
 		}
@@ -381,7 +419,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		if !cmd.Flags().Changed("service-port") && cfg.Gateway.Port > 0 {
 			servicePort = cfg.Gateway.Port
 		}
-		result, err := onboarding.SetupSystemdGateway(onboarding.SetupOptions{
+		result, err := onboardSetupSystemdFn(onboarding.SetupOptions{
 			ServiceUser: onboardServiceUser,
 			BinaryPath:  onboardServiceBinary,
 			Port:        servicePort,
@@ -403,13 +441,38 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  + Override file: %s\n", result.OverridePath)
 		fmt.Printf("  + Env file: %s\n", result.EnvPath)
 		fmt.Printf("  + Service port: %d\n", servicePort)
-		fmt.Println("  Next (as root): systemctl daemon-reload && systemctl enable --now kafclaw-gateway.service")
+		if onboardSystemdActivate {
+			if onboardCurrentEUID() != 0 {
+				fmt.Println("  Auto-activate skipped (requires root).")
+				fmt.Println("  Next (as root): systemctl daemon-reload && systemctl enable --now kafclaw-gateway.service")
+			} else if err := onboardActivateSystemdFn(); err != nil {
+				fmt.Printf("  Auto-activate failed: %v\n", err)
+				fmt.Println("  Retry manually: systemctl daemon-reload && systemctl enable --now kafclaw-gateway.service")
+			} else {
+				fmt.Println("  Service activation: enabled and started")
+			}
+		} else {
+			fmt.Println("  Next (as root): systemctl daemon-reload && systemctl enable --now kafclaw-gateway.service")
+		}
 		_ = emitLifecycleEvent("onboard", "systemd", "ok", "systemd setup completed", map[string]any{
 			"servicePort": servicePort,
 			"serviceUser": onboardServiceUser,
 		})
 	}
-	printPostOnboardingReadiness(cmd, cfg)
+	health := runOnboardingHealthGate(cmd, cfg)
+	if onboardJSON {
+		summary := onboardingSummary{
+			ConfigPath:  cfgPath,
+			Workspace:   cfg.Paths.Workspace,
+			WorkRepo:    cfg.Paths.WorkRepoPath,
+			Mode:        resolveOnboardModeLabel(cfg),
+			GatewayBind: resolveGatewayBindLabel(cfg),
+			Skills:      skillsSummary,
+			Health:      health,
+		}
+		data, _ := json.MarshalIndent(summary, "", "  ")
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	}
 	_ = emitLifecycleEvent("onboard", "complete", "ok", "onboarding completed", map[string]any{
 		"gatewayHost": cfg.Gateway.Host,
 		"gatewayPort": cfg.Gateway.Port,
@@ -491,11 +554,23 @@ func isLoopbackHost(host string) bool {
 	return normalized == "127.0.0.1" || normalized == "localhost" || normalized == "::1"
 }
 
-func printPostOnboardingReadiness(cmd *cobra.Command, cfg *config.Config) {
+func runOnboardingHealthGate(cmd *cobra.Command, cfg *config.Config) onboardingHealthSummary {
+	summary := onboardingHealthSummary{
+		Skipped:        onboardSkipHealthcheck,
+		WaitForGateway: onboardWaitForGateway,
+	}
+	if onboardHealthTimeout > 0 {
+		summary.Timeout = onboardHealthTimeout.String()
+	}
+	if onboardSkipHealthcheck {
+		fmt.Fprintln(cmd.OutOrStdout(), "\nReadiness gates: skipped (--skip-healthcheck)")
+		return summary
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "\nReadiness gates:")
 	report, err := cliconfig.RunDoctorWithOptions(cliconfig.DoctorOptions{})
 	if err != nil {
 		fmt.Fprintf(cmd.OutOrStdout(), "- doctor: warning (%v)\n", err)
+		summary.Warning = err.Error()
 	} else {
 		failures := 0
 		for _, check := range report.Checks {
@@ -503,6 +578,7 @@ func printPostOnboardingReadiness(cmd *cobra.Command, cfg *config.Config) {
 				failures++
 			}
 		}
+		summary.DoctorFailures = failures
 		if failures > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "- doctor: %d failing check(s) (run 'kafclaw doctor')\n", failures)
 		} else {
@@ -515,5 +591,126 @@ func printPostOnboardingReadiness(cmd *cobra.Command, cfg *config.Config) {
 	}
 	if cfg != nil && (cfg.Channels.Slack.Enabled || cfg.Channels.MSTeams.Enabled) {
 		fmt.Fprintln(cmd.OutOrStdout(), "- channel pairing: run 'kafclaw pairing pending'")
+	}
+	if onboardWaitForGateway && cfg != nil {
+		host := strings.TrimSpace(cfg.Gateway.Host)
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		url := fmt.Sprintf("http://%s:%d/healthz", host, cfg.Gateway.Port)
+		summary.GatewayURL = url
+		if waitForGatewayHealth(url, onboardHealthTimeout) {
+			summary.GatewayReachable = true
+			fmt.Fprintln(cmd.OutOrStdout(), "- gateway: reachable")
+		} else {
+			summary.Warning = "gateway health endpoint not reachable within timeout"
+			fmt.Fprintf(cmd.OutOrStdout(), "- gateway: not reachable within %s\n", onboardHealthTimeout)
+		}
+	}
+	return summary
+}
+
+func waitForGatewayHealth(url string, timeout time.Duration) bool {
+	if strings.TrimSpace(url) == "" || timeout <= 0 {
+		return false
+	}
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return true
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
+}
+
+func resolveOnboardModeLabel(cfg *config.Config) string {
+	if cfg == nil {
+		return "unknown"
+	}
+	if !isLoopbackHost(cfg.Gateway.Host) {
+		return "remote"
+	}
+	if cfg.Group.Enabled {
+		return "local-kafka"
+	}
+	return "local"
+}
+
+func resolveGatewayBindLabel(cfg *config.Config) string {
+	if cfg == nil {
+		return "unknown"
+	}
+	if isLoopbackHost(cfg.Gateway.Host) {
+		return "loopback"
+	}
+	return "non-loopback"
+}
+
+func normalizeOnboardResetScope(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "none":
+		return "none"
+	case "config":
+		return "config"
+	case "full":
+		return "full"
+	default:
+		return ""
+	}
+}
+
+func applyOnboardResetScope(scopeRaw, cfgPath string) error {
+	scope := normalizeOnboardResetScope(scopeRaw)
+	if scope == "" {
+		return fmt.Errorf("invalid --reset-scope: %s (expected none|config|full)", strings.TrimSpace(scopeRaw))
+	}
+	if scope == "none" {
+		return nil
+	}
+	if strings.TrimSpace(cfgPath) == "" {
+		return fmt.Errorf("cannot resolve config path for reset")
+	}
+	if err := os.Remove(cfgPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("reset config: %w", err)
+	}
+	if scope != "full" {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err == nil {
+		_ = os.Remove(filepath.Join(home, ".config", "kafclaw", "env"))
+	}
+	return nil
+}
+
+func normalizeOnboardPaths(cfg *config.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("nil config")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	cfg.Paths.Workspace = expandOnboardTildePath(cfg.Paths.Workspace, home)
+	cfg.Paths.WorkRepoPath = expandOnboardTildePath(cfg.Paths.WorkRepoPath, home)
+	cfg.Paths.SystemRepoPath = expandOnboardTildePath(cfg.Paths.SystemRepoPath, home)
+	return nil
+}
+
+func expandOnboardTildePath(path, home string) string {
+	trimmed := strings.TrimSpace(path)
+	switch {
+	case trimmed == "~":
+		return home
+	case strings.HasPrefix(trimmed, "~/"):
+		return filepath.Join(home, trimmed[2:])
+	default:
+		return trimmed
 	}
 }
