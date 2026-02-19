@@ -20,6 +20,14 @@ Primary command groups:
 - `kafclaw group` - group collaboration controls
 - `kafclaw kshark` - Kafka diagnostics
 
+Automation-friendly lifecycle output:
+- `kafclaw onboard --json`
+- `kafclaw install --json`
+- `kafclaw configure --json`
+- `kafclaw doctor --json`
+- `kafclaw security <check|audit|fix> --json`
+- `kafclaw update <plan|backup|apply|rollback> --json`
+
 Detailed command examples:
 - [Getting Started](../start-here/getting-started/)
 - [User Manual - CLI Reference section](../start-here/user-manual/#3-cli-reference)
