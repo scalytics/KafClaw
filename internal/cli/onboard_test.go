@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/KafClaw/KafClaw/internal/config"
+	"github.com/spf13/cobra"
 )
 
 func TestOnboardNonInteractiveRequiresAcceptRisk(t *testing.T) {
@@ -246,5 +250,172 @@ func TestOnboardPersistsGatewayPort(t *testing.T) {
 	}
 	if int(port) != 19990 {
 		t.Fatalf("expected gateway.port 19990, got %d", int(port))
+	}
+}
+
+func TestValidateOnboardNonInteractiveFlags(t *testing.T) {
+	origNonInteractive := onboardNonInteractive
+	origMode := onboardMode
+	origProfile := onboardProfile
+	origLLM := onboardLLMPreset
+	defer func() {
+		onboardNonInteractive = origNonInteractive
+		onboardMode = origMode
+		onboardProfile = origProfile
+		onboardLLMPreset = origLLM
+	}()
+
+	onboardNonInteractive = false
+	if err := validateOnboardNonInteractiveFlags(); err != nil {
+		t.Fatalf("expected nil when non-interactive is disabled, got %v", err)
+	}
+
+	onboardNonInteractive = true
+	onboardMode = ""
+	onboardProfile = ""
+	onboardLLMPreset = "skip"
+	if err := validateOnboardNonInteractiveFlags(); err == nil {
+		t.Fatal("expected mode/profile validation error")
+	}
+
+	onboardMode = "local"
+	onboardLLMPreset = ""
+	if err := validateOnboardNonInteractiveFlags(); err == nil {
+		t.Fatal("expected llm validation error")
+	}
+
+	onboardMode = "local"
+	onboardLLMPreset = "skip"
+	if err := validateOnboardNonInteractiveFlags(); err != nil {
+		t.Fatalf("expected valid non-interactive flags, got %v", err)
+	}
+}
+
+func TestPreflightOnboardingConfigValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, ".kafclaw", "config.json")
+
+	if err := preflightOnboardingConfig(nil, cfgPath); err == nil {
+		t.Fatal("expected nil config preflight error")
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Paths.Workspace = ""
+	if err := preflightOnboardingConfig(cfg, cfgPath); err == nil {
+		t.Fatal("expected empty workspace preflight error")
+	}
+
+	cfg = config.DefaultConfig()
+	cfg.Paths.Workspace = filepath.Join(tmpDir, "workspace")
+	cfg.Gateway.Port = 0
+	if err := preflightOnboardingConfig(cfg, cfgPath); err == nil {
+		t.Fatal("expected invalid gateway.port preflight error")
+	}
+
+	cfg = config.DefaultConfig()
+	cfg.Paths.Workspace = filepath.Join(tmpDir, "workspace")
+	cfg.Gateway.Port = 18790
+	cfg.Gateway.DashboardPort = 18790
+	if err := preflightOnboardingConfig(cfg, cfgPath); err == nil {
+		t.Fatal("expected gateway port collision preflight error")
+	}
+
+	cfg = config.DefaultConfig()
+	cfg.Paths.Workspace = filepath.Join(tmpDir, "workspace")
+	cfg.Gateway.Port = 18790
+	cfg.Gateway.DashboardPort = 0
+	if err := preflightOnboardingConfig(cfg, cfgPath); err == nil {
+		t.Fatal("expected invalid gateway.dashboardPort preflight error")
+	}
+
+	cfgDirAsFile := filepath.Join(tmpDir, "cfg-parent-file")
+	if err := os.WriteFile(cfgDirAsFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write cfg parent file: %v", err)
+	}
+	cfg = config.DefaultConfig()
+	cfg.Paths.Workspace = filepath.Join(tmpDir, "workspace")
+	cfg.Gateway.Port = 18790
+	cfg.Gateway.DashboardPort = 18791
+	if err := preflightOnboardingConfig(cfg, filepath.Join(cfgDirAsFile, "config.json")); err == nil {
+		t.Fatal("expected config directory creation preflight error")
+	}
+
+	wsParentAsFile := filepath.Join(tmpDir, "workspace-parent-file")
+	if err := os.WriteFile(wsParentAsFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write workspace parent file: %v", err)
+	}
+	cfg = config.DefaultConfig()
+	cfg.Paths.Workspace = filepath.Join(wsParentAsFile, "workspace")
+	cfg.Gateway.Port = 18790
+	cfg.Gateway.DashboardPort = 18791
+	if err := preflightOnboardingConfig(cfg, cfgPath); err == nil {
+		t.Fatal("expected workspace mkdir preflight error")
+	}
+
+	cfg = config.DefaultConfig()
+	cfg.Paths.Workspace = filepath.Join(tmpDir, "workspace")
+	cfg.Gateway.Port = 18790
+	cfg.Gateway.DashboardPort = 18791
+	if err := preflightOnboardingConfig(cfg, cfgPath); err != nil {
+		t.Fatalf("expected valid preflight, got %v", err)
+	}
+}
+
+func TestEnforceGatewayBindSafety(t *testing.T) {
+	origNonInteractive := onboardNonInteractive
+	origAllowNonLoopback := onboardAllowNonLoopback
+	defer func() {
+		onboardNonInteractive = origNonInteractive
+		onboardAllowNonLoopback = origAllowNonLoopback
+	}()
+
+	cmd := &cobra.Command{}
+	in := bytes.NewBufferString("")
+	out := &bytes.Buffer{}
+	cmd.SetIn(in)
+	cmd.SetOut(out)
+
+	if err := enforceGatewayBindSafety(nil, cmd); err != nil {
+		t.Fatalf("expected nil for nil config, got %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	if err := enforceGatewayBindSafety(cfg, cmd); err != nil {
+		t.Fatalf("expected nil for loopback host, got %v", err)
+	}
+
+	cfg.Gateway.Host = "0.0.0.0"
+	cfg.Gateway.AuthToken = ""
+	if err := enforceGatewayBindSafety(cfg, cmd); err == nil {
+		t.Fatal("expected auth token enforcement error")
+	}
+
+	cfg.Gateway.AuthToken = "token"
+	onboardAllowNonLoopback = true
+	onboardNonInteractive = true
+	if err := enforceGatewayBindSafety(cfg, cmd); err != nil {
+		t.Fatalf("expected acknowledged non-loopback to pass, got %v", err)
+	}
+
+	onboardAllowNonLoopback = false
+	onboardNonInteractive = true
+	if err := enforceGatewayBindSafety(cfg, cmd); err == nil {
+		t.Fatal("expected non-interactive acknowledgement error")
+	}
+
+	onboardNonInteractive = false
+	cmd = &cobra.Command{}
+	cmd.SetIn(bytes.NewBufferString("n\n"))
+	cmd.SetOut(&bytes.Buffer{})
+	if err := enforceGatewayBindSafety(cfg, cmd); err == nil {
+		t.Fatal("expected interactive abort for non-loopback bind")
+	}
+
+	cmd = &cobra.Command{}
+	cmd.SetIn(bytes.NewBufferString("y\n"))
+	cmd.SetOut(&bytes.Buffer{})
+	if err := enforceGatewayBindSafety(cfg, cmd); err != nil {
+		t.Fatalf("expected interactive approval to pass, got %v", err)
 	}
 }

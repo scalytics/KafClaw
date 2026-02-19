@@ -25,6 +25,12 @@ func TestPreflightUpdateCompatibility(t *testing.T) {
 	if err := preflightUpdateCompatibility("2.6.3", "v2.5.9", true); err != nil {
 		t.Fatalf("expected allowed downgrade, got %v", err)
 	}
+	if err := preflightUpdateCompatibility("dev", "v2.6.3", false); err != nil {
+		t.Fatalf("expected current-version parse fallback path to pass, got %v", err)
+	}
+	if err := preflightUpdateCompatibility("2.6.3", "not-semver", false); err == nil {
+		t.Fatal("expected invalid target version error")
+	}
 }
 
 func TestCreateAndRestoreUpdateBackup(t *testing.T) {
@@ -217,5 +223,219 @@ func TestUpdatePlanJSONOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, `"command": "update"`) || !strings.Contains(out, `"action": "plan"`) {
 		t.Fatalf("expected update plan json output, got %q", out)
+	}
+}
+
+func TestUpdatePlanTextOutput(t *testing.T) {
+	origJSON := updateJSON
+	defer func() { updateJSON = origJSON }()
+	updateJSON = false
+
+	out, err := runRootCommand(t, "update", "plan")
+	if err != nil {
+		t.Fatalf("update plan failed: %v", err)
+	}
+	if !strings.Contains(out, "Canonical update flow:") || !strings.Contains(out, "kafclaw update apply --latest") {
+		t.Fatalf("expected update plan text output, got %q", out)
+	}
+}
+
+func TestValidateUpdateTarget(t *testing.T) {
+	if err := validateUpdateTarget(true, "v2.6.3", false); err == nil {
+		t.Fatal("expected conflict when --latest and --version are both set")
+	}
+	if err := validateUpdateTarget(false, "", false); err == nil {
+		t.Fatal("expected binary target validation error")
+	}
+	if err := validateUpdateTarget(false, "", true); err != nil {
+		t.Fatalf("expected source mode to allow no explicit version, got %v", err)
+	}
+	if err := validateUpdateTarget(true, "", false); err != nil {
+		t.Fatalf("expected latest mode to validate, got %v", err)
+	}
+}
+
+func TestPreflightUpdateRuntimeConfigError(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	origKHome := os.Getenv("KAFCLAW_HOME")
+	defer os.Setenv("HOME", origHome)
+	defer os.Setenv("KAFCLAW_HOME", origKHome)
+	_ = os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("KAFCLAW_HOME", tmpDir)
+
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatalf("mkdir cfg dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte("{not-json"), 0o600); err != nil {
+		t.Fatalf("write invalid config: %v", err)
+	}
+
+	if err := preflightUpdateRuntime(); err == nil {
+		t.Fatal("expected preflight runtime to fail on invalid config")
+	}
+}
+
+func TestPreflightUpdateRuntimeTimelineError(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	origKHome := os.Getenv("KAFCLAW_HOME")
+	defer os.Setenv("HOME", origHome)
+	defer os.Setenv("KAFCLAW_HOME", origKHome)
+	_ = os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("KAFCLAW_HOME", tmpDir)
+
+	cfg := config.DefaultConfig()
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	timelinePath := filepath.Join(tmpDir, ".kafclaw", "timeline.db")
+	if err := os.MkdirAll(timelinePath, 0o700); err != nil {
+		t.Fatalf("create invalid timeline path: %v", err)
+	}
+
+	if err := preflightUpdateRuntime(); err == nil {
+		t.Fatal("expected timeline migration preflight error")
+	}
+}
+
+func TestPreflightUpdateRuntimeWithoutTimelineDB(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	origKHome := os.Getenv("KAFCLAW_HOME")
+	defer os.Setenv("HOME", origHome)
+	defer os.Setenv("KAFCLAW_HOME", origKHome)
+	_ = os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("KAFCLAW_HOME", tmpDir)
+
+	if err := config.Save(config.DefaultConfig()); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	if err := preflightUpdateRuntime(); err != nil {
+		t.Fatalf("expected preflight to pass without timeline db, got %v", err)
+	}
+}
+
+func TestUpdateRollbackUsesLatestSnapshotJSON(t *testing.T) {
+	origJSON := updateJSON
+	origRollbackPath := updateRollbackPath
+	origBackupDir := updateBackupDir
+	defer func() {
+		updateJSON = origJSON
+		updateRollbackPath = origRollbackPath
+		updateBackupDir = origBackupDir
+	}()
+	updateJSON = false
+	updateRollbackPath = ""
+	updateBackupDir = ""
+
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	origKHome := os.Getenv("KAFCLAW_HOME")
+	defer os.Setenv("HOME", origHome)
+	defer os.Setenv("KAFCLAW_HOME", origKHome)
+	_ = os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("KAFCLAW_HOME", tmpDir)
+
+	cfg := config.DefaultConfig()
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	cfgPath, err := config.ConfigPath()
+	if err != nil {
+		t.Fatalf("config path: %v", err)
+	}
+	if err := os.WriteFile(cfgPath, []byte(`{"gateway":{"port":18790}}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	backupRoot := filepath.Join(tmpDir, "backups")
+	if _, _, err := createUpdateBackup(backupRoot); err != nil {
+		t.Fatalf("create backup: %v", err)
+	}
+
+	out, err := runRootCommand(t, "update", "rollback", "--backup-dir", backupRoot, "--json")
+	if err != nil {
+		t.Fatalf("rollback --json failed: %v", err)
+	}
+	if !strings.Contains(out, `"action": "rollback"`) || !strings.Contains(out, `"restoredVersion"`) {
+		t.Fatalf("expected rollback json output, got %q", out)
+	}
+}
+
+func TestUpdateRollbackErrors(t *testing.T) {
+	origRollbackPath := updateRollbackPath
+	origBackupDir := updateBackupDir
+	defer func() {
+		updateRollbackPath = origRollbackPath
+		updateBackupDir = origBackupDir
+	}()
+
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	origKHome := os.Getenv("KAFCLAW_HOME")
+	defer os.Setenv("HOME", origHome)
+	defer os.Setenv("KAFCLAW_HOME", origKHome)
+	_ = os.Setenv("HOME", tmpDir)
+	_ = os.Setenv("KAFCLAW_HOME", tmpDir)
+
+	backupRoot := filepath.Join(tmpDir, "backups")
+	if _, err := runRootCommand(t, "update", "rollback", "--backup-dir", backupRoot); err == nil {
+		t.Fatal("expected rollback to fail when no snapshots exist")
+	}
+	if _, err := runRootCommand(t, "update", "rollback", "--backup-path", filepath.Join(tmpDir, "missing-snapshot")); err == nil {
+		t.Fatal("expected rollback to fail for missing snapshot path")
+	}
+}
+
+func TestRunBinaryAndSourceUpdateErrors(t *testing.T) {
+	if err := runSourceUpdate(""); err == nil {
+		t.Fatal("expected source update to fail when repo path is empty")
+	}
+
+	tmpDir := t.TempDir()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	if err := runBinaryUpdate(true, ""); err == nil {
+		t.Fatal("expected binary update to fail when installer script is missing from cwd")
+	}
+}
+
+func TestRunSourceUpdateCommandFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := runSourceUpdate(tmpDir); err == nil {
+		t.Fatal("expected source update command failure in non-git directory")
+	}
+}
+
+func TestRunBinaryUpdateScriptFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join("scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("scripts", "install.sh"), []byte("#!/usr/bin/env sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write install script: %v", err)
+	}
+
+	if err := runBinaryUpdate(true, ""); err == nil {
+		t.Fatal("expected binary update command failure")
 	}
 }
