@@ -17,7 +17,7 @@ Operator-focused guide for managing KafClaw from CLI and runtime endpoints.
 | `kafclaw doctor` | Run setup/config diagnostics including skills readiness checks |
 | `kafclaw security` | Unified security checks/audit/fix (`check`, `audit --deep`, `fix --yes`) |
 | `kafclaw config` | Low-level dotted-path config read/write/unset |
-| `kafclaw configure` | Guided/non-interactive config updates (subagents + skills toggles) |
+| `kafclaw configure` | Guided/non-interactive config updates (subagents, skills, Kafka group security) |
 | `kafclaw skills` | Skills lifecycle (`enable/disable/list/status/verify/install/update/auth/prereq`) |
 | `kafclaw group` | Join/leave/status/members for Kafka collaboration group |
 | `kafclaw kshark` | Kafka connectivity and protocol diagnostics |
@@ -176,6 +176,7 @@ Use `kafclaw security` for consolidated security posture and deep skill audits.
 ./kafclaw configure --non-interactive --skills-enabled-set --skills-enabled=true --skills-node-manager npm
 ./kafclaw configure --non-interactive --skills-scope selected
 ./kafclaw configure --non-interactive --enable-skill github --disable-skill weather
+./kafclaw configure --non-interactive --kafka-brokers "broker1:9092,broker2:9092" --kafka-security-protocol SASL_SSL --kafka-sasl-mechanism SCRAM-SHA-512 --kafka-sasl-username "<username>" --kafka-sasl-password "<password>" --kafka-tls-ca-file "/path/to/ca.pem"
 ```
 
 Skills policy defaults:
@@ -231,6 +232,18 @@ Using onboarding profile:
 ./kafclaw onboard --non-interactive --profile local-kafka --kafka-brokers "broker1:9092,broker2:9092" --group-name kafclaw --agent-id agent-ops --role worker --llm skip
 ```
 
+Using onboarding profile with broker security:
+
+```bash
+./kafclaw onboard --non-interactive --profile local-kafka --llm skip \
+  --kafka-brokers "broker1:9092,broker2:9092" \
+  --kafka-security-protocol SASL_SSL \
+  --kafka-sasl-mechanism SCRAM-SHA-512 \
+  --kafka-sasl-username "<username>" \
+  --kafka-sasl-password "<password>" \
+  --kafka-tls-ca-file "/path/to/ca.pem"
+```
+
 Using direct config commands:
 
 ```bash
@@ -239,6 +252,27 @@ Using direct config commands:
 ./kafclaw config set group.kafkaBrokers "broker1:9092,broker2:9092"
 ./kafclaw config set group.consumerGroup "kafclaw-workers"
 ./kafclaw config set group.agentId "agent-ops"
+```
+
+Kafka security options are optional. Plaintext/non-mTLS installs continue to work by default.
+
+Direct broker security (Confluent/Redpanda-style SASL/SSL):
+
+```bash
+./kafclaw config set group.kafkaSecurityProtocol "SASL_SSL"
+./kafclaw config set group.kafkaSaslMechanism "PLAIN"
+./kafclaw config set group.kafkaSaslUsername "<username>"
+./kafclaw config set group.kafkaSaslPassword "<password>"
+./kafclaw config set group.kafkaTlsCAFile "/path/to/ca.pem"
+```
+
+Mutual TLS (when required by cluster policy):
+
+```bash
+./kafclaw config set group.kafkaSecurityProtocol "SSL"
+./kafclaw config set group.kafkaTlsCAFile "/path/to/ca.pem"
+./kafclaw config set group.kafkaTlsCertFile "/path/to/client-cert.pem"
+./kafclaw config set group.kafkaTlsKeyFile "/path/to/client-key.pem"
 ```
 
 Using KafScale proxy style settings:
@@ -255,6 +289,8 @@ Verification:
 ./kafclaw group status
 ./kafclaw kshark --auto --yes
 ```
+
+`kshark --auto` now reads the same group Kafka security settings used by runtime group consumers.
 
 ## 8. Kafka Diagnostics with KShark
 

@@ -110,11 +110,33 @@ Local + Kafka:
 ./kafclaw onboard --non-interactive --profile local-kafka --kafka-brokers localhost:9092 --group-name kafclaw --agent-id agent-local --role worker --llm skip
 ```
 
+Local + Kafka + SASL/SSL:
+
+```bash
+./kafclaw onboard --non-interactive --profile local-kafka --llm skip \
+  --kafka-brokers "broker1:9092,broker2:9092" \
+  --kafka-security-protocol SASL_SSL \
+  --kafka-sasl-mechanism SCRAM-SHA-512 \
+  --kafka-sasl-username "<username>" \
+  --kafka-sasl-password "<password>" \
+  --kafka-tls-ca-file "/path/to/ca.pem"
+```
+
 Kafka auth via KafScale proxy key (SASL/PLAIN over SSL auto-derived by `kshark --auto`):
 
 ```bash
 ./kafclaw config set group.lfsProxyUrl "https://your-kafscale-endpoint"
 ./kafclaw config set group.lfsProxyApiKey "<kafscale-api-key>"
+```
+
+Kafka auth via direct broker settings (Confluent/Redpanda-style SASL/SSL), post-onboarding:
+
+```bash
+./kafclaw config set group.kafkaSecurityProtocol "SASL_SSL"
+./kafclaw config set group.kafkaSaslMechanism "PLAIN"
+./kafclaw config set group.kafkaSaslUsername "<username>"
+./kafclaw config set group.kafkaSaslPassword "<password>"
+./kafclaw config set group.kafkaTlsCAFile "/path/to/ca.pem"
 ```
 
 Remote + Ollama/vLLM:

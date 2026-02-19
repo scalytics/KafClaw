@@ -237,6 +237,7 @@ Guided config updates (higher-level than raw key/value `config set`).
 kafclaw configure
 kafclaw configure --subagents-allow-agents agent-main,agent-research --non-interactive
 kafclaw configure --clear-subagents-allow-agents --non-interactive
+kafclaw configure --non-interactive --kafka-brokers "broker1:9092,broker2:9092" --kafka-security-protocol SASL_SSL --kafka-sasl-mechanism SCRAM-SHA-512 --kafka-sasl-username "<username>" --kafka-sasl-password "<password>" --kafka-tls-ca-file "/path/to/ca.pem"
 ```
 
 ### 3.9 `kshark`
