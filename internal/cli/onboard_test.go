@@ -104,3 +104,54 @@ func TestOnboardConfiguresOAuthCapabilities(t *testing.T) {
 		t.Fatalf("expected m365 entry, got %#v", entries["m365"])
 	}
 }
+
+func TestOnboardConfiguresKafkaSecurity(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	if _, err := runRootCommand(t,
+		"onboard",
+		"--non-interactive",
+		"--accept-risk",
+		"--skip-skills",
+		"--mode=local-kafka",
+		"--llm=skip",
+		"--kafka-brokers=broker1:9092,broker2:9092",
+		"--kafka-security-protocol=SASL_SSL",
+		"--kafka-sasl-mechanism=SCRAM-SHA-512",
+		"--kafka-sasl-username=svc-user",
+		"--kafka-sasl-password=svc-pass",
+		"--kafka-tls-ca-file=/etc/ssl/kafka-ca.pem",
+		"--kafka-tls-cert-file=/etc/ssl/client.pem",
+		"--kafka-tls-key-file=/etc/ssl/client.key",
+	); err != nil {
+		t.Fatalf("onboard failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".kafclaw", "config.json"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+	group, ok := cfg["group"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing group section")
+	}
+	if v, _ := group["kafkaSecurityProtocol"].(string); v != "SASL_SSL" {
+		t.Fatalf("expected kafkaSecurityProtocol SASL_SSL, got %q", v)
+	}
+	if v, _ := group["kafkaSaslMechanism"].(string); v != "SCRAM-SHA-512" {
+		t.Fatalf("expected kafkaSaslMechanism SCRAM-SHA-512, got %q", v)
+	}
+	if v, _ := group["kafkaSaslUsername"].(string); v != "svc-user" {
+		t.Fatalf("expected kafkaSaslUsername svc-user, got %q", v)
+	}
+	if v, _ := group["kafkaTlsCAFile"].(string); v != "/etc/ssl/kafka-ca.pem" {
+		t.Fatalf("expected kafkaTlsCAFile set, got %q", v)
+	}
+}

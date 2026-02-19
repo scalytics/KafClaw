@@ -34,6 +34,13 @@ var onboardLLMToken string
 var onboardLLMAPIBase string
 var onboardLLMModel string
 var onboardKafkaBrokers string
+var onboardKafkaSecurityProtocol string
+var onboardKafkaSASLMechanism string
+var onboardKafkaSASLUsername string
+var onboardKafkaSASLPassword string
+var onboardKafkaTLSCAFile string
+var onboardKafkaTLSCertFile string
+var onboardKafkaTLSKeyFile string
 var onboardGroupName string
 var onboardAgentID string
 var onboardRole string
@@ -82,6 +89,13 @@ func init() {
 	onboardCmd.Flags().StringVar(&onboardLLMAPIBase, "llm-api-base", "", "OpenAI-compatible API base (e.g. http://localhost:11434/v1)")
 	onboardCmd.Flags().StringVar(&onboardLLMModel, "llm-model", "", "Default model name")
 	onboardCmd.Flags().StringVar(&onboardKafkaBrokers, "kafka-brokers", "", "Kafka brokers for local-kafka mode")
+	onboardCmd.Flags().StringVar(&onboardKafkaSecurityProtocol, "kafka-security-protocol", "", "Kafka security protocol: PLAINTEXT|SSL|SASL_PLAINTEXT|SASL_SSL")
+	onboardCmd.Flags().StringVar(&onboardKafkaSASLMechanism, "kafka-sasl-mechanism", "", "Kafka SASL mechanism: PLAIN|SCRAM-SHA-256|SCRAM-SHA-512")
+	onboardCmd.Flags().StringVar(&onboardKafkaSASLUsername, "kafka-sasl-username", "", "Kafka SASL username")
+	onboardCmd.Flags().StringVar(&onboardKafkaSASLPassword, "kafka-sasl-password", "", "Kafka SASL password")
+	onboardCmd.Flags().StringVar(&onboardKafkaTLSCAFile, "kafka-tls-ca-file", "", "Kafka TLS CA certificate file path")
+	onboardCmd.Flags().StringVar(&onboardKafkaTLSCertFile, "kafka-tls-cert-file", "", "Kafka TLS client certificate file path")
+	onboardCmd.Flags().StringVar(&onboardKafkaTLSKeyFile, "kafka-tls-key-file", "", "Kafka TLS client key file path")
 	onboardCmd.Flags().StringVar(&onboardGroupName, "group-name", "", "Group name for local-kafka mode")
 	onboardCmd.Flags().StringVar(&onboardAgentID, "agent-id", "", "Agent ID for local-kafka mode")
 	onboardCmd.Flags().StringVar(&onboardRole, "role", "", "Orchestrator role for local-kafka mode")
@@ -145,6 +159,13 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		LLMAPIBase:       onboardLLMAPIBase,
 		LLMModel:         onboardLLMModel,
 		KafkaBrokers:     onboardKafkaBrokers,
+		KafkaSecurity:    onboardKafkaSecurityProtocol,
+		KafkaSASLMech:    onboardKafkaSASLMechanism,
+		KafkaSASLUser:    onboardKafkaSASLUsername,
+		KafkaSASLPass:    onboardKafkaSASLPassword,
+		KafkaTLSCAFile:   onboardKafkaTLSCAFile,
+		KafkaTLSCertFile: onboardKafkaTLSCertFile,
+		KafkaTLSKeyFile:  onboardKafkaTLSKeyFile,
 		GroupName:        onboardGroupName,
 		AgentID:          onboardAgentID,
 		Role:             onboardRole,
