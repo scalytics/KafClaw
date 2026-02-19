@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -27,6 +28,7 @@ var configureKafkaSASLPassword string
 var configureKafkaTLSCAFile string
 var configureKafkaTLSCertFile string
 var configureKafkaTLSKeyFile string
+var configureJSON bool
 
 var configureCmd = &cobra.Command{
 	Use:   "configure",
@@ -53,6 +55,7 @@ func init() {
 	configureCmd.Flags().StringVar(&configureKafkaTLSCertFile, "kafka-tls-cert-file", "", "Set group.kafkaTlsCertFile")
 	configureCmd.Flags().StringVar(&configureKafkaTLSKeyFile, "kafka-tls-key-file", "", "Set group.kafkaTlsKeyFile")
 	configureCmd.Flags().BoolVar(&configureNonInteractive, "non-interactive", false, "Apply flags only and skip prompts")
+	configureCmd.Flags().BoolVar(&configureJSON, "json", false, "Output machine-readable JSON summary")
 	configureCmd.Flags().Bool("skills-enabled-set", false, "Apply --skills-enabled value")
 	rootCmd.AddCommand(configureCmd)
 }
@@ -204,6 +207,29 @@ func runConfigure(cmd *cobra.Command, args []string) error {
 
 	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
+	}
+
+	if configureJSON {
+		summary := map[string]any{
+			"status":  "ok",
+			"command": "configure",
+			"result": map[string]any{
+				"allowAgents":           cfg.Tools.Subagents.AllowAgents,
+				"skillsEnabled":         cfg.Skills.Enabled,
+				"skillsNodeManager":     cfg.Skills.NodeManager,
+				"skillsScope":           cfg.Skills.Scope,
+				"kafkaBrokers":          cfg.Group.KafkaBrokers,
+				"kafkaSecurityProtocol": cfg.Group.KafkaSecurityProto,
+				"kafkaSaslMechanism":    cfg.Group.KafkaSASLMechanism,
+				"kafkaSaslUsername":     cfg.Group.KafkaSASLUsername,
+				"kafkaTlsCAFile":        cfg.Group.KafkaTLSCAFile,
+				"kafkaTlsCertFile":      cfg.Group.KafkaTLSCertFile,
+				"kafkaTlsKeyFile":       cfg.Group.KafkaTLSKeyFile,
+			},
+		}
+		b, _ := json.MarshalIndent(summary, "", "  ")
+		fmt.Fprintln(cmd.OutOrStdout(), string(b))
+		return nil
 	}
 
 	state := "(current agent only)"

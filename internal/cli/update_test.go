@@ -209,3 +209,13 @@ func TestLifecycleUpdateApplyAndRollbackWithFailureInjection(t *testing.T) {
 		t.Fatalf("expected original config port after rollback, got %s", string(cfgData))
 	}
 }
+
+func TestUpdatePlanJSONOutput(t *testing.T) {
+	out, err := runRootCommand(t, "update", "plan", "--json")
+	if err != nil {
+		t.Fatalf("update plan --json failed: %v", err)
+	}
+	if !strings.Contains(out, `"command": "update"`) || !strings.Contains(out, `"action": "plan"`) {
+		t.Fatalf("expected update plan json output, got %q", out)
+	}
+}

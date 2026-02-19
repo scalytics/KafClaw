@@ -29,6 +29,7 @@ var updateAllowDowngrade bool
 var updateRepoPath string
 var updateRollbackPath string
 var updateRestoreBinary bool
+var updateJSON bool
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
@@ -93,11 +94,23 @@ func init() {
 	updateRollbackCmd.Flags().StringVar(&updateRollbackPath, "backup-path", "", "Backup snapshot path to restore (default: latest)")
 	updateRollbackCmd.Flags().StringVar(&updateBackupDir, "backup-dir", "", "Backup root directory (default: ~/.kafclaw/backups)")
 	updateRollbackCmd.Flags().BoolVar(&updateRestoreBinary, "restore-binary", false, "Restore backed-up binary to current executable path")
+	updateCmd.PersistentFlags().BoolVar(&updateJSON, "json", false, "Output machine-readable JSON")
 
 	rootCmd.AddCommand(updateCmd)
 }
 
 func runUpdatePlan(cmd *cobra.Command, args []string) error {
+	if updateJSON {
+		return printUpdateJSON(cmd, "ok", "plan", map[string]any{
+			"steps": []string{
+				"preflight",
+				"backup",
+				"apply",
+				"health-gate",
+				"rollback",
+			},
+		}, "")
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Canonical update flow:")
 	fmt.Fprintln(cmd.OutOrStdout(), "1) preflight: config/timeline compatibility checks")
 	fmt.Fprintln(cmd.OutOrStdout(), "2) backup: snapshot config/env/timeline(+binary)")
@@ -125,6 +138,9 @@ func runUpdateBackup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	_ = emitLifecycleEvent("update", "backup", "ok", "backup created", map[string]any{"path": path})
+	if updateJSON {
+		return printUpdateJSON(cmd, "ok", "backup", map[string]any{"path": path}, "")
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Backup created: %s\n", path)
 	return nil
 }
@@ -168,11 +184,19 @@ func runUpdateApply(cmd *cobra.Command, args []string) error {
 		}
 		backupPath = p
 		_ = emitLifecycleEvent("update", "backup", "ok", "backup created", map[string]any{"path": backupPath})
-		fmt.Fprintf(cmd.OutOrStdout(), "Pre-update backup: %s\n", backupPath)
+		if !updateJSON {
+			fmt.Fprintf(cmd.OutOrStdout(), "Pre-update backup: %s\n", backupPath)
+		}
 	}
 
 	if updateDryRun {
 		_ = emitLifecycleEvent("update", "apply", "ok", "dry-run completed", nil)
+		if updateJSON {
+			return printUpdateJSON(cmd, "ok", "apply", map[string]any{
+				"dryRun":     true,
+				"backupPath": backupPath,
+			}, "")
+		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Dry-run mode: update apply skipped.")
 		return nil
 	}
@@ -218,17 +242,24 @@ func runUpdateApply(cmd *cobra.Command, args []string) error {
 
 	afterCfg, _ := loadConfigMapForDrift()
 	drift := detectConfigDrift(beforeCfg, afterCfg)
-	if len(drift) > 0 {
+	if !updateJSON && len(drift) > 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "Config drift detected:")
 		for _, d := range drift {
 			fmt.Fprintf(cmd.OutOrStdout(), "  - %s\n", d)
 		}
-	} else {
+	} else if !updateJSON {
 		fmt.Fprintln(cmd.OutOrStdout(), "Config drift: none")
 	}
 
 	if failures > 0 {
 		_ = emitLifecycleEvent("update", "health-gate", "error", "post-update health gate failed", map[string]any{"failures": failures})
+		if updateJSON {
+			return printUpdateJSON(cmd, "error", "apply", map[string]any{
+				"backupPath": backupPath,
+				"drift":      drift,
+				"failures":   failures,
+			}, "post-update health gate failed")
+		}
 		if backupPath != "" {
 			return fmt.Errorf("post-update health gate failed; run `kafclaw update rollback --backup-path %s`", backupPath)
 		}
@@ -236,6 +267,12 @@ func runUpdateApply(cmd *cobra.Command, args []string) error {
 	}
 	_ = emitLifecycleEvent("update", "health-gate", "ok", "post-update health checks passed", nil)
 	_ = emitLifecycleEvent("update", "complete", "ok", "update flow completed", nil)
+	if updateJSON {
+		return printUpdateJSON(cmd, "ok", "apply", map[string]any{
+			"backupPath": backupPath,
+			"drift":      drift,
+		}, "")
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Update completed and health gates passed.")
 	return nil
 }
@@ -261,6 +298,12 @@ func runUpdateRollback(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	_ = emitLifecycleEvent("update", "rollback", "ok", "rollback restored", map[string]any{"path": path})
+	if updateJSON {
+		return printUpdateJSON(cmd, "ok", "rollback", map[string]any{
+			"path":            path,
+			"restoredVersion": manifest.CurrentVersion,
+		}, "")
+	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Rollback restored from: %s\n", path)
 	fmt.Fprintf(cmd.OutOrStdout(), "Restored version context: %s\n", manifest.CurrentVersion)
 	return nil
@@ -670,4 +713,27 @@ func flattenConfig(prefix string, v any, out map[string]string) {
 		b, _ := json.Marshal(t)
 		out[prefix] = string(b)
 	}
+}
+
+func printUpdateJSON(cmd *cobra.Command, status, action string, result map[string]any, errMsg string) error {
+	payload := map[string]any{
+		"status":  strings.TrimSpace(status),
+		"command": "update",
+		"action":  strings.TrimSpace(action),
+	}
+	if len(result) > 0 {
+		payload["result"] = result
+	}
+	if strings.TrimSpace(errMsg) != "" {
+		payload["error"] = strings.TrimSpace(errMsg)
+	}
+	b, _ := json.MarshalIndent(payload, "", "  ")
+	fmt.Fprintln(cmd.OutOrStdout(), string(b))
+	if strings.EqualFold(status, "error") {
+		if errMsg == "" {
+			errMsg = "update command failed"
+		}
+		return fmt.Errorf("%s", errMsg)
+	}
+	return nil
 }
