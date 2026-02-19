@@ -672,7 +672,7 @@ func detectConfigDrift(before, after map[string]any) []string {
 	post := map[string]string{}
 	flattenConfig("", before, pre)
 	flattenConfig("", after, post)
-	keys := make(map[string]struct{}, len(pre)+len(post))
+	keys := map[string]struct{}{}
 	for k := range pre {
 		keys[k] = struct{}{}
 	}

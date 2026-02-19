@@ -209,7 +209,7 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 		}
 		dialer, err := group.BuildKafkaDialerFromGroupConfig(grpCfg)
 		if err != nil {
-			fmt.Printf("⚠️ Kafka consumer config error: %v\n", err)
+			fmt.Println("⚠️ Kafka consumer config error: invalid or incomplete Kafka security settings.")
 			fmt.Println("⚠️ Group router not started until Kafka security settings are fixed.")
 			kafkaCancel()
 			return func() {}

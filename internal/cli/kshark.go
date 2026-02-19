@@ -96,9 +96,9 @@ func runKshark(cmd *cobra.Command, args []string) error {
 
 	topics := kshark.ParseTopics(ksharkTopic)
 
-	// Print scan plan
+	// Print scan plan without echoing sensitive endpoint values.
 	fmt.Println("\n--- Scan Plan ---")
-	fmt.Printf("Target Kafka Cluster: %s\n", props["bootstrap.servers"])
+	fmt.Println("Target Kafka Cluster: configured")
 	if len(topics) > 0 {
 		fmt.Printf("Target Topics: %s\n", strings.Join(topics, ", "))
 	} else {
@@ -111,7 +111,7 @@ func runKshark(cmd *cobra.Command, args []string) error {
 		fmt.Println("  - Produce & Consume Probe.")
 	}
 	if props["schema.registry.url"] != "" {
-		fmt.Printf("  - Schema Registry Check: %s\n", props["schema.registry.url"])
+		fmt.Println("  - Schema Registry Check: enabled")
 	}
 	if ksharkDiag {
 		fmt.Println("  - Network Diagnostics (Traceroute, MTU).")
