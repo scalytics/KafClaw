@@ -29,14 +29,22 @@ warn() {
   printf '[kafclaw-install] warning: %s\n' "$*" >&2
 }
 
-die() {
-  printf '[kafclaw-install] error: %s\n' "$*" >&2
+fail() {
+  local code="$1"
+  local message="$2"
+  local remediation="${3:-check the logs above and rerun the installer}"
+  printf '[kafclaw-install] error [%s]: %s. remediation: %s\n' "$code" "$message" "$remediation" >&2
   exit 1
+}
+
+die() {
+  fail "INSTALL_FAILED" "$*" "check the logs above and rerun the installer"
 }
 
 require_cmd() {
   local name="$1"
-  command -v "$name" >/dev/null 2>&1 || die "missing required command: ${name}"
+  local remediation="${2:-install '${name}' and rerun the installer}"
+  command -v "$name" >/dev/null 2>&1 || fail "INSTALL_PREREQ_MISSING" "missing required command: ${name}" "${remediation}"
 }
 
 usage() {
@@ -130,10 +138,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$VERSION" && "$LATEST_REQUESTED" -eq 1 ]]; then
-  die "use either --version <tag> or --latest, not both"
+  fail "INSTALL_ARGS_INVALID" "use either --version <tag> or --latest, not both" "rerun with a single release selector"
 fi
 if [[ "$UNATTENDED" -eq 1 && -z "$VERSION" && "$LATEST_REQUESTED" -eq 0 ]]; then
-  die "unattended mode requires explicit release selection: pass --latest or --version <tag>"
+  fail "INSTALL_ARGS_INVALID" "unattended mode requires explicit release selection" "pass --latest or --version <tag>"
 fi
 
 OS_RAW="$(uname -s)"
@@ -141,10 +149,10 @@ OS="$(echo "$OS_RAW" | tr '[:upper:]' '[:lower:]')"
 case "$OS" in
   linux|darwin) ;;
   msys*|mingw*|cygwin*)
-    die "Windows detected. Use the .exe release artifact or a PowerShell installer path."
+    fail "INSTALL_OS_UNSUPPORTED" "Windows detected in POSIX shell installer" "use the Windows .exe release artifact or a PowerShell installer path"
     ;;
   *)
-    die "unsupported OS: $OS_RAW (supported: Linux, macOS)"
+    fail "INSTALL_OS_UNSUPPORTED" "unsupported OS: $OS_RAW" "use Linux or macOS release artifacts"
     ;;
 esac
 
@@ -153,7 +161,7 @@ case "$ARCH_RAW" in
   x86_64|amd64) ARCH="amd64" ;;
   arm64|aarch64) ARCH="arm64" ;;
   *)
-    die "unsupported architecture: $ARCH_RAW (supported: amd64, arm64)"
+    fail "INSTALL_ARCH_UNSUPPORTED" "unsupported architecture: $ARCH_RAW" "use amd64 or arm64 host/release artifacts"
     ;;
 esac
 
@@ -182,17 +190,17 @@ if [[ -z "$INSTALL_DIR" ]]; then
 fi
 
 preflight_install_prereqs() {
-  require_cmd uname
-  require_cmd curl
-  require_cmd awk
-  require_cmd sed
-  require_cmd grep
-  require_cmd mktemp
-  require_cmd install
-  require_cmd chmod
-  require_cmd id
+  require_cmd uname "install coreutils/OS base utilities and rerun"
+  require_cmd curl "install curl (for release download) and rerun"
+  require_cmd awk "install awk and rerun"
+  require_cmd sed "install sed and rerun"
+  require_cmd grep "install grep and rerun"
+  require_cmd mktemp "install mktemp and rerun"
+  require_cmd install "install coreutils 'install' command and rerun"
+  require_cmd chmod "install coreutils chmod and rerun"
+  require_cmd id "install coreutils id and rerun"
   if [[ "$VERIFY_SIGNATURE" -eq 1 ]]; then
-    require_cmd cosign
+    require_cmd cosign "install cosign, or rerun with --no-signature-verify if policy allows"
   fi
 }
 
@@ -208,7 +216,7 @@ list_releases() {
   local payload tags latest
   payload="$(curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 "${releases_api}")"
   tags="$(printf '%s\n' "$payload" | grep -Eo '"tag_name":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)".*/\1/' || true)"
-  [[ -n "$tags" ]] || die "failed to parse releases list from ${releases_api}"
+  [[ -n "$tags" ]] || fail "INSTALL_RELEASE_LIST_FAILED" "failed to parse releases list from ${releases_api}" "check GitHub API/network access and retry"
   latest="$(printf '%s\n' "$tags" | head -n1)"
   echo "Latest: ${latest#v}"
   echo "Recent releases:"
@@ -223,7 +231,7 @@ fi
 if [[ "$LATEST_REQUESTED" -eq 1 || ( -z "$VERSION" && "$UNATTENDED" -eq 0 ) ]]; then
   log "detecting latest release version"
   VERSION="$(detect_latest_version)"
-  [[ -n "$VERSION" ]] || die "failed to detect latest release version"
+  [[ -n "$VERSION" ]] || fail "INSTALL_LATEST_DETECT_FAILED" "failed to detect latest release version" "check GitHub connectivity and retry"
 fi
 
 if [[ "$VERSION" != v* ]]; then
@@ -249,35 +257,35 @@ if [[ "$UNATTENDED" -eq 1 ]]; then
   log "running in unattended mode"
 fi
 log "downloading ${DOWNLOAD_URL}"
-curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_BIN" "$DOWNLOAD_URL" || die "failed to download ${DOWNLOAD_URL}"
+curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_BIN" "$DOWNLOAD_URL" || fail "INSTALL_DOWNLOAD_FAILED" "failed to download ${DOWNLOAD_URL}" "verify release/version/platform and network access"
 
 log "downloading checksums"
-curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_SUMS" "$CHECKSUMS_URL" || die "failed to download ${CHECKSUMS_URL}"
+curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_SUMS" "$CHECKSUMS_URL" || fail "INSTALL_CHECKSUM_FETCH_FAILED" "failed to download ${CHECKSUMS_URL}" "verify release assets and network access"
 
 EXPECTED_SHA="$(awk -v f="$(basename "$TMP_BIN")" '$2 == f {print $1; exit}' "$TMP_SUMS")"
-[[ -n "$EXPECTED_SHA" ]] || die "checksum for $(basename "$TMP_BIN") not found in SHA256SUMS"
+[[ -n "$EXPECTED_SHA" ]] || fail "INSTALL_CHECKSUM_MISSING" "checksum for $(basename "$TMP_BIN") not found in SHA256SUMS" "use a valid release/version for this platform"
 
 if command -v sha256sum >/dev/null 2>&1; then
   ACTUAL_SHA="$(sha256sum "$TMP_BIN" | awk '{print $1}')"
 elif command -v shasum >/dev/null 2>&1; then
   ACTUAL_SHA="$(shasum -a 256 "$TMP_BIN" | awk '{print $1}')"
 else
-  die "missing checksum tool (need sha256sum or shasum)"
+  fail "INSTALL_CHECKSUM_TOOL_MISSING" "missing checksum tool (need sha256sum or shasum)" "install coreutils/OpenSSL checksum utilities and rerun"
 fi
 
-[[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] || die "checksum verification failed for $(basename "$TMP_BIN")"
+[[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] || fail "INSTALL_CHECKSUM_MISMATCH" "checksum verification failed for $(basename "$TMP_BIN")" "do not use this artifact; retry download or choose a different release"
 
 if [[ "$VERIFY_SIGNATURE" -eq 1 ]]; then
   log "downloading signature and certificate"
-  curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_SIG" "$SIG_URL" || die "failed to download ${SIG_URL}"
-  curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_PEM" "$PEM_URL" || die "failed to download ${PEM_URL}"
+  curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_SIG" "$SIG_URL" || fail "INSTALL_SIGNATURE_FETCH_FAILED" "failed to download ${SIG_URL}" "verify release signature asset availability and retry"
+  curl --fail --show-error --silent --location --retry 3 --connect-timeout 10 -o "$TMP_PEM" "$PEM_URL" || fail "INSTALL_CERT_FETCH_FAILED" "failed to download ${PEM_URL}" "verify release certificate asset availability and retry"
   log "verifying signature with cosign"
   cosign verify-blob \
     --certificate "$TMP_PEM" \
     --signature "$TMP_SIG" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
     --certificate-identity-regexp '^https://github\.com/[Kk]af[Cc]law/[Kk]af[Cc]law/\.github/workflows/release\.yml@refs/tags/.*$' \
-    "$TMP_BIN" >/dev/null || die "cosign signature verification failed for $(basename "$TMP_BIN")"
+    "$TMP_BIN" >/dev/null || fail "INSTALL_SIGNATURE_VERIFY_FAILED" "cosign signature verification failed for $(basename "$TMP_BIN")" "confirm release provenance and retry; or use --no-signature-verify only if policy allows"
 fi
 
 chmod +x "$TMP_BIN"
@@ -303,7 +311,7 @@ create_service_user_linux() {
     log "created service user: ${name}"
     return 0
   fi
-  die "cannot create user ${name}: neither useradd nor adduser is available"
+  fail "INSTALL_SERVICE_USER_CREATE_FAILED" "cannot create user ${name}: neither useradd nor adduser is available" "install user management tools or rerun with root runtime accepted"
 }
 
 run_as_user() {
@@ -317,7 +325,7 @@ run_as_user() {
     su - "$user" -c "$(printf "%q " "$@")"
     return
   fi
-  die "cannot run command as ${user}: missing sudo/su"
+  fail "INSTALL_RUNAS_UNAVAILABLE" "cannot run command as ${user}: missing sudo/su" "install sudo/su utilities or run completion setup manually"
 }
 
 resolve_home_for_user() {
@@ -450,6 +458,35 @@ if [[ "$WITH_COMPLETION" -eq 1 ]]; then
   fi
 fi
 
+install_verify() {
+  local version_output
+  local status_target_home="${INSTALL_HOME:-${HOME:-}}"
+
+  log "verification"
+  if ! version_output="$("$TARGET_BIN" version 2>/dev/null)"; then
+    if ! version_output="$("$TARGET_BIN" --version 2>/dev/null)"; then
+      fail "INSTALL_VERIFY_VERSION_FAILED" "installed binary failed version check" "rerun installer and confirm executable permissions at ${TARGET_BIN}"
+    fi
+  fi
+  echo "  - version check: ok (${version_output})"
+
+  if command -v "$BINARY" >/dev/null 2>&1; then
+    echo "  - PATH check: ok ($(command -v "$BINARY"))"
+  else
+    warn "PATH check: '${BINARY}' is not currently discoverable in PATH"
+  fi
+
+  if [[ -n "$status_target_home" && -f "${status_target_home}/.kafclaw/config.json" ]]; then
+    if "$TARGET_BIN" status >/dev/null 2>&1; then
+      echo "  - status check: ok"
+    else
+      warn "status check failed; run '${TARGET_BIN} doctor' for diagnostics"
+    fi
+  else
+    echo "  - status check: skipped (no config yet; run '${TARGET_BIN} onboard' first)"
+  fi
+}
+
 if [[ "$SETUP_SERVICE" -eq 1 ]]; then
   echo
   log "startup guidance"
@@ -481,8 +518,7 @@ if [[ "$SETUP_SERVICE" -eq 1 ]]; then
 fi
 
 echo
-log "verification"
-"$TARGET_BIN" version || "$TARGET_BIN" --version || true
+install_verify
 if [[ -n "$SHELL_RELOAD_HINT" ]]; then
   echo "Reload your shell to enable completion and PATH updates:"
   echo "  ${SHELL_RELOAD_HINT}"

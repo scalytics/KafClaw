@@ -14,7 +14,7 @@ func TestOnboardNonInteractiveRequiresAcceptRisk(t *testing.T) {
 	defer os.Setenv("HOME", origHome)
 	_ = os.Setenv("HOME", tmpDir)
 
-	_, err := runRootCommand(t, "onboard", "--non-interactive", "--skip-skills")
+	_, err := runRootCommand(t, "onboard", "--non-interactive", "--mode=local", "--llm=skip", "--skip-skills")
 	if err == nil {
 		t.Fatal("expected onboard to fail without --accept-risk in non-interactive mode")
 	}
@@ -26,7 +26,7 @@ func TestOnboardJSONSummary(t *testing.T) {
 	defer os.Setenv("HOME", origHome)
 	_ = os.Setenv("HOME", tmpDir)
 
-	out, err := runRootCommand(t, "onboard", "--non-interactive", "--accept-risk", "--skip-skills", "--json")
+	out, err := runRootCommand(t, "onboard", "--non-interactive", "--accept-risk", "--mode=local", "--llm=skip", "--skip-skills", "--json")
 	if err != nil {
 		t.Fatalf("onboard failed: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestOnboardSkillsBootstrapPath(t *testing.T) {
 	}
 	_ = os.Setenv("PATH", bin+string(os.PathListSeparator)+origPath)
 
-	out, err := runRootCommand(t, "onboard", "--non-interactive", "--accept-risk", "--skip-skills=false", "--json")
+	out, err := runRootCommand(t, "onboard", "--non-interactive", "--accept-risk", "--mode=local", "--llm=skip", "--skip-skills=false", "--json")
 	if err != nil {
 		t.Fatalf("onboard failed: %v", err)
 	}
@@ -74,6 +74,8 @@ func TestOnboardConfiguresOAuthCapabilities(t *testing.T) {
 		"onboard",
 		"--non-interactive",
 		"--accept-risk",
+		"--mode=local",
+		"--llm=skip",
 		"--skip-skills",
 		"--google-workspace-read=mail,drive",
 		"--m365-read=calendar",
@@ -153,5 +155,93 @@ func TestOnboardConfiguresKafkaSecurity(t *testing.T) {
 	}
 	if v, _ := group["kafkaTlsCAFile"].(string); v != "/etc/ssl/kafka-ca.pem" {
 		t.Fatalf("expected kafkaTlsCAFile set, got %q", v)
+	}
+}
+
+func TestOnboardNonInteractiveRequiresModeAndLLM(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+	origMode := onboardMode
+	origProfile := onboardProfile
+	origLLM := onboardLLMPreset
+	defer func() {
+		onboardMode = origMode
+		onboardProfile = origProfile
+		onboardLLMPreset = origLLM
+	}()
+	onboardMode = ""
+	onboardProfile = ""
+	onboardLLMPreset = ""
+
+	if _, err := runRootCommand(t, "onboard", "--non-interactive", "--accept-risk", "--skip-skills"); err == nil {
+		t.Fatal("expected non-interactive onboarding to fail without mode/profile and llm")
+	}
+}
+
+func TestOnboardNonInteractiveNonLoopbackRequiresAck(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	if _, err := runRootCommand(t, "onboard",
+		"--non-interactive",
+		"--accept-risk",
+		"--skip-skills",
+		"--mode=remote",
+		"--llm=skip",
+	); err == nil {
+		t.Fatal("expected remote non-loopback onboarding to require --allow-non-loopback")
+	}
+
+	if _, err := runRootCommand(t, "onboard",
+		"--non-interactive",
+		"--accept-risk",
+		"--skip-skills",
+		"--mode=remote",
+		"--llm=skip",
+		"--allow-non-loopback",
+	); err != nil {
+		t.Fatalf("expected onboarding to pass with non-loopback acknowledgement: %v", err)
+	}
+}
+
+func TestOnboardPersistsGatewayPort(t *testing.T) {
+	tmpDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	if _, err := runRootCommand(t, "onboard",
+		"--non-interactive",
+		"--accept-risk",
+		"--skip-skills",
+		"--mode=local",
+		"--llm=skip",
+		"--gateway-port=19990",
+	); err != nil {
+		t.Fatalf("onboard failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".kafclaw", "config.json"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+	gateway, ok := cfg["gateway"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing gateway config")
+	}
+	port, ok := gateway["port"].(float64)
+	if !ok {
+		t.Fatalf("missing gateway.port")
+	}
+	if int(port) != 19990 {
+		t.Fatalf("expected gateway.port 19990, got %d", int(port))
 	}
 }

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/KafClaw/KafClaw/internal/cliconfig"
 	"github.com/KafClaw/KafClaw/internal/config"
 	"github.com/KafClaw/KafClaw/internal/identity"
 	"github.com/KafClaw/KafClaw/internal/onboarding"
@@ -60,6 +62,8 @@ var onboardInstallClawhub bool
 var onboardSkillsNodeMajor string
 var onboardGoogleWorkspaceRead string
 var onboardM365Read string
+var onboardGatewayPort int
+var onboardAllowNonLoopback bool
 
 type onboardingSkillsSummary struct {
 	Enabled      bool     `json:"enabled"`
@@ -112,6 +116,8 @@ func init() {
 	onboardCmd.Flags().StringVar(&onboardSkillsNodeMajor, "skills-node-major", "20", "Node major version to pin in .nvmrc for skills")
 	onboardCmd.Flags().StringVar(&onboardGoogleWorkspaceRead, "google-workspace-read", "", "Preconfigure google-workspace capabilities (mail,calendar,drive,all)")
 	onboardCmd.Flags().StringVar(&onboardM365Read, "m365-read", "", "Preconfigure m365 capabilities (mail,calendar,files,all)")
+	onboardCmd.Flags().IntVar(&onboardGatewayPort, "gateway-port", 0, "Gateway API port to persist in config (default: keep current)")
+	onboardCmd.Flags().BoolVar(&onboardAllowNonLoopback, "allow-non-loopback", false, "Acknowledge external/LAN gateway bind risk during onboarding")
 	onboardCmd.Flags().BoolVar(&onboardSystemd, "systemd", false, "Install systemd service + override + env file (Linux)")
 	onboardCmd.Flags().StringVar(&onboardServiceUser, "service-user", "kafclaw", "Service user for systemd setup")
 	onboardCmd.Flags().StringVar(&onboardServiceBinary, "service-binary", "/usr/local/bin/kafclaw", "kafclaw binary path for systemd ExecStart")
@@ -125,30 +131,28 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	if onboardNonInteractive && !onboardAcceptRisk {
 		return fmt.Errorf("non-interactive onboarding requires --accept-risk")
 	}
+	if err := validateOnboardNonInteractiveFlags(); err != nil {
+		return err
+	}
 
 	printHeader("🚀 KafClaw Onboard")
 	fmt.Println("Initializing KafClaw...")
 
 	cfgPath, _ := config.ConfigPath()
-
-	if _, err := os.Stat(cfgPath); err == nil && !onboardForce {
-		fmt.Printf("Config already exists at: %s\n", cfgPath)
-		fmt.Println("Use --force (-f) to overwrite.")
-	} else {
-		cfg := config.DefaultConfig()
-		if err := config.Save(cfg); err != nil {
-			fmt.Printf("Error saving config: %v\n", err)
-		} else {
-			fmt.Printf("Config created at: %s\n", cfgPath)
+	configExists := false
+	cfg := config.DefaultConfig()
+	if _, err := os.Stat(cfgPath); err == nil {
+		configExists = true
+		loaded, loadErr := config.Load()
+		if loadErr != nil {
+			fmt.Printf("Config warning: %v (using defaults)\n", loadErr)
+		} else if loaded != nil {
+			cfg = loaded
 		}
-	}
-
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Printf("Config warning: %v (using defaults)\n", err)
-	}
-	if cfg == nil {
-		cfg = config.DefaultConfig()
+		fmt.Printf("Config exists at: %s\n", cfgPath)
+		fmt.Println("Onboarding will update selected fields; existing settings are kept unless changed.")
+	} else {
+		fmt.Printf("Config will be created at: %s\n", cfgPath)
 	}
 
 	if err := onboarding.RunProfileWizard(cfg, cmd.InOrStdin(), cmd.OutOrStdout(), onboarding.WizardParams{
@@ -179,26 +183,40 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		SubThinking:      onboardSubThinking,
 		NonInteractive:   onboardNonInteractive,
 	}); err != nil {
-		fmt.Printf("Onboarding wizard error: %v\n", err)
-		return nil
+		return fmt.Errorf("onboarding wizard error: %w", err)
+	}
+
+	if onboardGatewayPort > 0 {
+		cfg.Gateway.Port = onboardGatewayPort
+	}
+	if cfg.Gateway.Port <= 0 {
+		cfg.Gateway.Port = 18790
+	}
+	if cfg.Gateway.DashboardPort <= 0 {
+		cfg.Gateway.DashboardPort = 18791
+	}
+
+	if err := preflightOnboardingConfig(cfg, cfgPath); err != nil {
+		return err
 	}
 
 	fmt.Fprintln(cmd.OutOrStdout(), onboarding.BuildProfileSummary(cfg))
-	if !onboardNonInteractive {
+	if !onboardNonInteractive && (configExists || !onboardForce) {
 		confirmReader := bufio.NewReader(cmd.InOrStdin())
 		ok, err := onboarding.ConfirmApply(confirmReader, cmd.OutOrStdout())
 		if err != nil {
-			fmt.Printf("Onboarding confirmation error: %v\n", err)
-			return nil
+			return fmt.Errorf("onboarding confirmation error: %w", err)
 		}
 		if !ok {
-			fmt.Println("Onboarding aborted before writing config.")
+			fmt.Println("Onboarding aborted before writing config or scaffolding files.")
 			return nil
 		}
 	}
+	if err := enforceGatewayBindSafety(cfg, cmd); err != nil {
+		return err
+	}
 	if err := config.Save(cfg); err != nil {
-		fmt.Printf("Error saving configured onboarding profile: %v\n", err)
-		return nil
+		return fmt.Errorf("error saving configured onboarding profile: %w", err)
 	}
 	fmt.Printf("Updated configuration at: %s\n", cfgPath)
 
@@ -339,10 +357,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 			fmt.Println("\nSystemd setup is only supported on Linux.")
 			return nil
 		}
+		servicePort := onboardServicePort
+		if !cmd.Flags().Changed("service-port") && cfg.Gateway.Port > 0 {
+			servicePort = cfg.Gateway.Port
+		}
 		result, err := onboarding.SetupSystemdGateway(onboarding.SetupOptions{
 			ServiceUser: onboardServiceUser,
 			BinaryPath:  onboardServiceBinary,
-			Port:        onboardServicePort,
+			Port:        servicePort,
 			Profile:     "default",
 			Version:     version,
 			InstallRoot: onboardInstallRoot,
@@ -359,7 +381,110 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  + Service unit: %s\n", result.ServicePath)
 		fmt.Printf("  + Override file: %s\n", result.OverridePath)
 		fmt.Printf("  + Env file: %s\n", result.EnvPath)
+		fmt.Printf("  + Service port: %d\n", servicePort)
 		fmt.Println("  Next (as root): systemctl daemon-reload && systemctl enable --now kafclaw-gateway.service")
 	}
+	printPostOnboardingReadiness(cmd, cfg)
 	return nil
+}
+
+func validateOnboardNonInteractiveFlags() error {
+	if !onboardNonInteractive {
+		return nil
+	}
+	if strings.TrimSpace(onboardMode) == "" && strings.TrimSpace(onboardProfile) == "" {
+		return fmt.Errorf("non-interactive onboarding requires explicit mode/profile (--mode or --profile)")
+	}
+	if strings.TrimSpace(onboardLLMPreset) == "" {
+		return fmt.Errorf("non-interactive onboarding requires explicit llm setup (--llm)")
+	}
+	return nil
+}
+
+func preflightOnboardingConfig(cfg *config.Config, cfgPath string) error {
+	if cfg == nil {
+		return fmt.Errorf("onboarding preflight failed: nil config")
+	}
+	if strings.TrimSpace(cfg.Paths.Workspace) == "" {
+		return fmt.Errorf("onboarding preflight failed: workspace path is empty")
+	}
+	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
+		return fmt.Errorf("onboarding preflight failed: gateway.port must be between 1 and 65535")
+	}
+	if cfg.Gateway.DashboardPort <= 0 || cfg.Gateway.DashboardPort > 65535 {
+		return fmt.Errorf("onboarding preflight failed: gateway.dashboardPort must be between 1 and 65535")
+	}
+	if cfg.Gateway.Port == cfg.Gateway.DashboardPort {
+		return fmt.Errorf("onboarding preflight failed: gateway.port and gateway.dashboardPort must differ")
+	}
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
+		return fmt.Errorf("onboarding preflight failed: cannot create config directory: %w", err)
+	}
+	if err := os.MkdirAll(cfg.Paths.Workspace, 0o755); err != nil {
+		return fmt.Errorf("onboarding preflight failed: cannot access workspace path %q: %w", cfg.Paths.Workspace, err)
+	}
+	return nil
+}
+
+func enforceGatewayBindSafety(cfg *config.Config, cmd *cobra.Command) error {
+	if cfg == nil || isLoopbackHost(cfg.Gateway.Host) {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Gateway.AuthToken) == "" {
+		return fmt.Errorf("non-loopback gateway bind (%s) requires gateway auth token", cfg.Gateway.Host)
+	}
+	if onboardAllowNonLoopback {
+		fmt.Fprintf(cmd.OutOrStdout(), "Gateway bind acknowledged for non-loopback host %s.\n", cfg.Gateway.Host)
+		printNetworkEncryptionRecommendation(cmd)
+		return nil
+	}
+	if onboardNonInteractive {
+		return fmt.Errorf("non-loopback gateway bind (%s) requires explicit acknowledgement: pass --allow-non-loopback", cfg.Gateway.Host)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "\nGateway bind is non-loopback (%s).\n", cfg.Gateway.Host)
+	printNetworkEncryptionRecommendation(cmd)
+	fmt.Fprint(cmd.OutOrStdout(), "Continue with non-loopback bind? [y/N]: ")
+	reader := bufio.NewReader(cmd.InOrStdin())
+	line, _ := reader.ReadString('\n')
+	answer := strings.TrimSpace(strings.ToLower(line))
+	if answer != "y" && answer != "yes" {
+		return fmt.Errorf("onboarding aborted: non-loopback bind not acknowledged")
+	}
+	return nil
+}
+
+func printNetworkEncryptionRecommendation(cmd *cobra.Command) {
+	fmt.Fprintln(cmd.OutOrStdout(), "Recommended for non-local exposure: TLS termination (reverse proxy), or private networking (Tailscale/SSH tunnel).")
+}
+
+func isLoopbackHost(host string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(host))
+	return normalized == "127.0.0.1" || normalized == "localhost" || normalized == "::1"
+}
+
+func printPostOnboardingReadiness(cmd *cobra.Command, cfg *config.Config) {
+	fmt.Fprintln(cmd.OutOrStdout(), "\nReadiness gates:")
+	report, err := cliconfig.RunDoctorWithOptions(cliconfig.DoctorOptions{})
+	if err != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "- doctor: warning (%v)\n", err)
+	} else {
+		failures := 0
+		for _, check := range report.Checks {
+			if check.Status == cliconfig.DoctorFail {
+				failures++
+			}
+		}
+		if failures > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "- doctor: %d failing check(s) (run 'kafclaw doctor')\n", failures)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "- doctor: ok")
+		}
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "- provider: review with 'kafclaw status'")
+	if cfg != nil && cfg.Channels.WhatsApp.Enabled {
+		fmt.Fprintln(cmd.OutOrStdout(), "- whatsapp auth: run 'kafclaw whatsapp-auth list'")
+	}
+	if cfg != nil && (cfg.Channels.Slack.Enabled || cfg.Channels.MSTeams.Enabled) {
+		fmt.Fprintln(cmd.OutOrStdout(), "- channel pairing: run 'kafclaw pairing pending'")
+	}
 }
