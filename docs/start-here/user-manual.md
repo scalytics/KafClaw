@@ -34,26 +34,38 @@ A comprehensive guide to installing, configuring, and using KafClaw — a person
 
 ### Installation
 
-Build from source:
+Release installer (recommended):
 
 ```bash
-cd KafClaw
-go build ./cmd/kafclaw
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --latest
 ```
 
-Or use the Makefile:
+Headless/unattended:
+
+```bash
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --unattended --latest
+```
+
+Pinned version:
+
+```bash
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --version v2.6.3
+```
+
+Source build path:
 
 ```bash
 cd KafClaw
 make build
 ```
 
-Install system-wide to `/usr/local/bin`:
-
-```bash
-kafclaw install
-# May require sudo
-```
+For complete install options (`--list-releases`, signature verification defaults, root/runtime behavior), see [KafClaw Management Guide](../operations-admin/manage-kafclaw/).
 
 ### First-Time Setup
 
@@ -180,10 +192,20 @@ kafclaw status
 
 ### 3.5 `install`
 
-Install binary to `/usr/local/bin`.
+Install the current local binary:
+
+- root: `/usr/local/bin`
+- non-root: `~/.local/bin`
 
 ```bash
 kafclaw install
+```
+
+Generate shell completion:
+
+```bash
+kafclaw completion zsh
+kafclaw completion bash
 ```
 
 ### 3.6 `doctor`

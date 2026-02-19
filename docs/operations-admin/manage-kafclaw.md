@@ -25,7 +25,8 @@ Operator-focused guide for managing KafClaw from CLI and runtime endpoints.
 | `kafclaw pairing` | Approve/deny pending Slack/Teams sender pairings |
 | `kafclaw whatsapp-setup` | Configure WhatsApp auth and initial lists |
 | `kafclaw whatsapp-auth` | Approve/deny/list WhatsApp JIDs |
-| `kafclaw install` | Install binary to `/usr/local/bin` |
+| `kafclaw install` | Install local binary (`/usr/local/bin` as root, `~/.local/bin` as non-root) |
+| `kafclaw completion` | Generate shell completion scripts (`bash|zsh|fish|powershell`) |
 | `kafclaw version` | Print build version |
 
 ## 2. First-Time Operator Runbook
@@ -42,7 +43,59 @@ Then verify:
 - API: `http://127.0.0.1:18790`
 - Dashboard: `http://127.0.0.1:18791`
 
-## 3. Onboarding and Modes
+## 3. Release Installer (Recommended for Operators)
+
+Install via release script (host OS/arch auto-detected):
+
+```bash
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --latest
+```
+
+List available versions:
+
+```bash
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --list-releases
+```
+
+Pinned install:
+
+```bash
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --version v2.6.3
+```
+
+Unattended/headless install requires explicit version selection:
+
+```bash
+# Latest channel
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --unattended --latest
+
+# Pinned version
+curl --fail --show-error --silent --location \
+  https://raw.githubusercontent.com/kafclaw/kafclaw/main/scripts/install.sh \
+  | bash -s -- --unattended --version v2.6.3
+```
+
+Security behavior:
+
+- Checksum verification (`SHA256SUMS`) is always required.
+- Signature verification (`cosign`) is enabled by default.
+- Use `--no-signature-verify` only in constrained environments where `cosign` is unavailable.
+
+Root install behavior:
+
+- Installer warns that root service install is a security risk.
+- If accepted, it creates non-root user `kafclaw` (Linux) for service runtime.
+- If declined (`n`), installer continues with root runtime and prints `Installing as root service.`
+
+## 4. Onboarding and Modes
 
 ### Interactive
 
@@ -77,7 +130,7 @@ Onboarding also scaffolds workspace files:
 
 Use `--force` to overwrite existing config and scaffold files.
 
-## 4. Daily Health Checks
+## 5. Daily Health Checks
 
 ### Status snapshot
 
@@ -104,7 +157,7 @@ Highlights include:
 When skills are enabled, doctor also checks `node`, `clawhub` (if external installs are enabled), runtime dir permissions, and channel-onboarding readiness.
 Use `kafclaw security` for consolidated security posture and deep skill audits.
 
-## 5. Config Management
+## 6. Config Management
 
 ### Low-level config edits
 
@@ -155,7 +208,7 @@ Direct config edits:
 ./kafclaw config set model.name "anthropic/claude-sonnet-4-5"
 ```
 
-## 6. Group Collaboration Operations
+## 7. Group Collaboration Operations
 
 ```bash
 ./kafclaw group join mygroup
@@ -203,7 +256,7 @@ Verification:
 ./kafclaw kshark --auto --yes
 ```
 
-## 7. Kafka Diagnostics with KShark
+## 8. Kafka Diagnostics with KShark
 
 Auto-config from current KafClaw group config:
 
@@ -223,7 +276,7 @@ Useful options:
 - `--diag` include traceroute/MTU diagnostics
 - `--preset` for predefined connection templates
 
-## 8. Channel Auth and Pairing
+## 9. Channel Auth and Pairing
 
 ### Pairing queue (Slack/Teams)
 
@@ -242,7 +295,7 @@ Useful options:
 ./kafclaw whatsapp-auth --deny "+123456789@s.whatsapp.net"
 ```
 
-## 9. Channel Bridge (`cmd/channelbridge`)
+## 10. Channel Bridge (`cmd/channelbridge`)
 
 Build and run:
 
