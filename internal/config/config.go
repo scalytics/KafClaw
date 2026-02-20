@@ -188,14 +188,16 @@ type MSTeamsAccountConfig struct {
 
 // ProvidersConfig contains LLM provider configurations.
 type ProvidersConfig struct {
-	Anthropic    ProviderConfig     `json:"anthropic"`
-	OpenAI       ProviderConfig     `json:"openai"`
-	LocalWhisper LocalWhisperConfig `json:"localWhisper"`
-	OpenRouter   ProviderConfig     `json:"openrouter"`
-	DeepSeek     ProviderConfig     `json:"deepseek"`
-	Groq         ProviderConfig     `json:"groq"`
-	Gemini       ProviderConfig     `json:"gemini"`
-	VLLM         ProviderConfig     `json:"vllm"`
+	Anthropic       ProviderConfig     `json:"anthropic"`
+	OpenAI          ProviderConfig     `json:"openai"`
+	LocalWhisper    LocalWhisperConfig `json:"localWhisper"`
+	OpenRouter      ProviderConfig     `json:"openrouter"`
+	DeepSeek        ProviderConfig     `json:"deepseek"`
+	Groq            ProviderConfig     `json:"groq"`
+	Gemini          ProviderConfig     `json:"gemini"`
+	VLLM            ProviderConfig     `json:"vllm"`
+	XAI             ProviderConfig     `json:"xai"`
+	ScalyticsCopilot ProviderConfig    `json:"scalyticsCopilot"`
 }
 
 // ProviderConfig contains settings for a single LLM provider.
@@ -289,11 +291,24 @@ type AgentDefaultsConfig struct {
 	Subagents SubagentsToolConfig `json:"subagents"`
 }
 
+// AgentModelSpec configures the primary model and fallbacks for an agent.
+type AgentModelSpec struct {
+	Primary   string   `json:"primary"`
+	Fallbacks []string `json:"fallbacks,omitempty"`
+}
+
+// AgentSubagentSpec configures the model for subagents spawned by an agent.
+type AgentSubagentSpec struct {
+	Model string `json:"model"`
+}
+
 // AgentListEntry describes a configured agent identity.
 type AgentListEntry struct {
-	ID      string `json:"id"`
-	Name    string `json:"name,omitempty"`
-	Default bool   `json:"default,omitempty"`
+	ID        string             `json:"id"`
+	Name      string             `json:"name,omitempty"`
+	Default   bool               `json:"default,omitempty"`
+	Model     *AgentModelSpec    `json:"model,omitempty"`
+	Subagents *AgentSubagentSpec `json:"subagents,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
