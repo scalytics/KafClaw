@@ -461,7 +461,7 @@ Pre-LLM middleware that scans inbound messages for PII, secrets, and prohibited 
 - [x] Built-in PII detectors: `email`, `phone`, `ssn`, `credit_card`, `ip_address`
 - [x] Built-in secret detectors: `api_key`, `bearer_token`, `private_key`, `password_literal`
 - [x] `ProcessRequest`: scan user-role messages, apply action per match type; block/redact/warn modes
-- [ ] Log violations to timeline as security events (reuse `LogSecurityEvent` if available)
+- [x] Log violations to timeline as security events (reuse `LogSecurityEvent` if available)
 - [x] `ProcessResponse`: no-op (output scanning is in OutputSanitizer)
 
 ### 17 — Output Sanitization (`internal/provider/middleware/sanitizer.go`)
@@ -562,7 +562,7 @@ Extend the resolver to dynamically select a model based on `TaskAssessment.Categ
 - [x] Add `TaskRouting map[string]string` to `ModelConfig` (`internal/config/config.go`)
 - [x] Add `ResolveWithTaskType(cfg *config.Config, agentID string, taskCategory string) (LLMProvider, error)` to `internal/provider/resolver.go`
 - [x] Wire into `agent/loop.go`: call `agent.AssessTask(message)` early, pass `assessment.Category` to `ResolveWithTaskType` on first iteration
-- [ ] Log task-type routing decisions to timeline span metadata for observability
+- [x] Log task-type routing decisions to timeline span metadata for observability
 
 ---
 
