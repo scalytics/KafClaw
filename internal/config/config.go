@@ -6,19 +6,23 @@ import "time"
 // Config is the root configuration struct.
 // Top-level groups: Paths, Model, Channels, Providers, Gateway, Tools.
 type Config struct {
-	Paths        PathsConfig          `json:"paths"`
-	Model        ModelConfig          `json:"model"`
-	Agents       *AgentsConfig        `json:"agents,omitempty"`
-	Channels     ChannelsConfig       `json:"channels"`
-	Providers    ProvidersConfig      `json:"providers"`
-	Gateway      GatewayConfig        `json:"gateway"`
-	Tools        ToolsConfig          `json:"tools"`
-	Skills       SkillsConfig         `json:"skills"`
-	Group        GroupConfig          `json:"group"`
-	Orchestrator OrchestratorConfig   `json:"orchestrator"`
-	Scheduler    SchedulerConfig      `json:"scheduler"`
-	ER1          ER1IntegrationConfig `json:"er1"`
-	Observer     ObserverMemoryConfig `json:"observer"`
+	Paths                 PathsConfig                `json:"paths"`
+	Model                 ModelConfig                `json:"model"`
+	Agents                *AgentsConfig              `json:"agents,omitempty"`
+	Channels              ChannelsConfig             `json:"channels"`
+	Providers             ProvidersConfig            `json:"providers"`
+	Gateway               GatewayConfig              `json:"gateway"`
+	Tools                 ToolsConfig                `json:"tools"`
+	Skills                SkillsConfig               `json:"skills"`
+	Group                 GroupConfig                `json:"group"`
+	Orchestrator          OrchestratorConfig         `json:"orchestrator"`
+	Scheduler             SchedulerConfig            `json:"scheduler"`
+	ER1                   ER1IntegrationConfig       `json:"er1"`
+	Observer              ObserverMemoryConfig       `json:"observer"`
+	ContentClassification ContentClassificationConfig `json:"contentClassification"`
+	PromptGuard           PromptGuardConfig          `json:"promptGuard"`
+	OutputSanitization    OutputSanitizationConfig   `json:"outputSanitization"`
+	FinOps                FinOpsConfig               `json:"finops"`
 }
 
 // ---------------------------------------------------------------------------
@@ -38,10 +42,11 @@ type PathsConfig struct {
 
 // ModelConfig groups LLM model and agent-loop settings.
 type ModelConfig struct {
-	Name              string  `json:"name" envconfig:"MODEL"`
-	MaxTokens         int     `json:"maxTokens" envconfig:"MAX_TOKENS"`
-	Temperature       float64 `json:"temperature" envconfig:"TEMPERATURE"`
-	MaxToolIterations int     `json:"maxToolIterations" envconfig:"MAX_TOOL_ITERATIONS"`
+	Name              string            `json:"name" envconfig:"MODEL"`
+	MaxTokens         int               `json:"maxTokens" envconfig:"MAX_TOKENS"`
+	Temperature       float64           `json:"temperature" envconfig:"TEMPERATURE"`
+	MaxToolIterations int               `json:"maxToolIterations" envconfig:"MAX_TOOL_ITERATIONS"`
+	TaskRouting       map[string]string `json:"taskRouting,omitempty"` // e.g. {"security":"claude/claude-opus-4-6","tool-heavy":"openai-codex/gpt-5.3-codex"}
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +410,78 @@ type ObserverMemoryConfig struct {
 	Model            string `json:"model" envconfig:"OBSERVER_MODEL"`
 	MessageThreshold int    `json:"messageThreshold" envconfig:"OBSERVER_MSG_THRESHOLD"`
 	MaxObservations  int    `json:"maxObservations" envconfig:"OBSERVER_MAX_OBS"`
+}
+
+// ---------------------------------------------------------------------------
+// Middleware – content classification, prompt guard, output sanitization, FinOps
+// ---------------------------------------------------------------------------
+
+// NamedPattern is a reusable named regex pattern.
+type NamedPattern struct {
+	Name    string `json:"name"`
+	Pattern string `json:"pattern"`
+}
+
+// SensitivityLevel configures detection and routing for a sensitivity class.
+type SensitivityLevel struct {
+	Patterns []string `json:"patterns,omitempty"` // regex patterns
+	Keywords []string `json:"keywords,omitempty"` // literal keywords (case-insensitive)
+	RouteTo  string   `json:"routeTo,omitempty"`  // model string to reroute to
+}
+
+// ContentClassificationConfig controls content-aware model routing.
+type ContentClassificationConfig struct {
+	Enabled           bool                        `json:"enabled"`
+	SensitivityLevels map[string]SensitivityLevel `json:"sensitivityLevels,omitempty"` // e.g. "pii", "confidential"
+	TaskTypeRoutes    map[string]string           `json:"taskTypeRoutes,omitempty"`    // task-category → model string
+}
+
+// PromptGuardConfig controls pre-LLM PII/secret scanning.
+type PromptGuardConfig struct {
+	Enabled        bool           `json:"enabled"`
+	Mode           string         `json:"mode,omitempty"` // "warn", "block", "redact" (default "warn")
+	PII            PIIConfig      `json:"pii"`
+	Secrets        SecretsConfig  `json:"secrets"`
+	DenyKeywords   []string       `json:"denyKeywords,omitempty"`
+	CustomPatterns []NamedPattern `json:"customPatterns,omitempty"`
+}
+
+// PIIConfig controls PII detection.
+type PIIConfig struct {
+	Detect         []string       `json:"detect,omitempty"` // e.g. ["email","phone","ssn","credit_card","ip_address"]
+	Action         string         `json:"action,omitempty"` // "redact", "block", "warn" (default inherits from mode)
+	CustomPatterns []NamedPattern `json:"customPatterns,omitempty"`
+}
+
+// SecretsConfig controls secret detection.
+type SecretsConfig struct {
+	Detect         []string       `json:"detect,omitempty"` // e.g. ["api_key","bearer_token","private_key","password_literal"]
+	Action         string         `json:"action,omitempty"` // "redact", "block", "warn"
+	CustomPatterns []NamedPattern `json:"customPatterns,omitempty"`
+}
+
+// OutputSanitizationConfig controls post-LLM response filtering.
+type OutputSanitizationConfig struct {
+	Enabled             bool           `json:"enabled"`
+	RedactPII           bool           `json:"redactPII"`
+	RedactSecrets       bool           `json:"redactSecrets"`
+	CustomRedactPatterns []NamedPattern `json:"customRedactPatterns,omitempty"`
+	DenyPatterns        []string       `json:"denyPatterns,omitempty"`
+	MaxOutputLength     int            `json:"maxOutputLength,omitempty"`
+}
+
+// ProviderPricing holds per-1k-token pricing for a provider.
+type ProviderPricing struct {
+	PromptPer1kTokens     float64 `json:"promptPer1kTokens"`
+	CompletionPer1kTokens float64 `json:"completionPer1kTokens"`
+}
+
+// FinOpsConfig controls cost attribution and budgets.
+type FinOpsConfig struct {
+	Enabled       bool                       `json:"enabled"`
+	Pricing       map[string]ProviderPricing `json:"pricing,omitempty"`       // providerID → pricing
+	DailyBudget   float64                    `json:"dailyBudget,omitempty"`   // max USD per day (0 = unlimited)
+	MonthlyBudget float64                    `json:"monthlyBudget,omitempty"` // max USD per month (0 = unlimited)
 }
 
 // DefaultConfig returns a Config with sensible defaults.
