@@ -76,6 +76,31 @@ func Resolve(cfg *config.Config, agentID string) (LLMProvider, error) {
 	return prov, nil
 }
 
+// ResolveWithTaskType is like Resolve but checks model.taskRouting first.
+// If the task category has a routing override and no per-agent model is set,
+// the routed model is used instead of the global default.
+func ResolveWithTaskType(cfg *config.Config, agentID, taskCategory string) (LLMProvider, error) {
+	// Per-agent model always wins.
+	if hasPerAgentModel(cfg, agentID) {
+		return Resolve(cfg, agentID)
+	}
+	// Check task routing.
+	if taskCategory != "" && len(cfg.Model.TaskRouting) > 0 {
+		if routeModel, ok := cfg.Model.TaskRouting[taskCategory]; ok {
+			provID, model := ParseModelString(routeModel)
+			if provID != "" {
+				provID = NormalizeProviderID(provID, cfg)
+				prov, err := buildProvider(cfg, provID, model)
+				if err == nil {
+					return prov, nil
+				}
+				// Fall through to normal resolve on error.
+			}
+		}
+	}
+	return Resolve(cfg, agentID)
+}
+
 // hasPerAgentModel checks if the agent has an explicitly configured model.
 func hasPerAgentModel(cfg *config.Config, agentID string) bool {
 	if cfg.Agents == nil {
