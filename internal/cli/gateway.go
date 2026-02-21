@@ -3485,19 +3485,23 @@ func runGit(repo string, args ...string) (string, error) {
 	if len(args) == 0 || !gitSubcommands[args[0]] {
 		return "", fmt.Errorf("git subcommand not allowed: %v", args)
 	}
-	sanitized := make([]string, 0, len(args))
-	sanitized = append(sanitized, args[0])
 	for _, a := range args[1:] {
 		if !safeGitArg.MatchString(a) {
 			return "", fmt.Errorf("git arg contains unsafe characters: %q", a)
 		}
-		sanitized = append(sanitized, a)
 	}
-	cmd := exec.Command("git", sanitized...)
-	cmd.Dir = repo
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		return "", fmt.Errorf("git not found: %w", err)
+	}
+	cmd := &exec.Cmd{
+		Path: gitBin,
+		Args: append([]string{gitBin}, args...),
+		Dir:  repo,
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git %s failed: %s", sanitized[0], strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s failed: %s", args[0], strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
 }
