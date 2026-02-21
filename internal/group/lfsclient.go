@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -117,7 +118,10 @@ func (c *LFSClient) Healthy(ctx context.Context) bool {
 	return resp.StatusCode < 500
 }
 
-// safeURL parses and validates the base URL, then appends the given path.
+// safeHost matches valid hostname:port patterns.
+var safeHost = regexp.MustCompile(`^[a-zA-Z0-9._:-]+$`)
+
+// safeURL parses and validates the base URL, then constructs a safe endpoint.
 func (c *LFSClient) safeURL(path string) (string, error) {
 	u, err := url.Parse(c.baseURL)
 	if err != nil {
@@ -126,6 +130,9 @@ func (c *LFSClient) safeURL(path string) (string, error) {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return "", fmt.Errorf("unsupported URL scheme: %s", u.Scheme)
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + path
-	return u.String(), nil
+	if !safeHost.MatchString(u.Host) {
+		return "", fmt.Errorf("invalid host: %s", u.Host)
+	}
+	// Reconstruct from validated components.
+	return u.Scheme + "://" + u.Host + strings.TrimRight(u.Path, "/") + path, nil
 }

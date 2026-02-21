@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -3474,6 +3475,9 @@ var gitSubcommands = map[string]bool{
 	"push": true, "remote": true, "init": true,
 }
 
+// safeGitArg matches characters safe for git arguments.
+var safeGitArg = regexp.MustCompile(`^[a-zA-Z0-9_./:@=, +\-~^]+$`)
+
 func runGit(repo string, args ...string) (string, error) {
 	if repo == "" {
 		return "", fmt.Errorf("work repo not configured")
@@ -3481,8 +3485,14 @@ func runGit(repo string, args ...string) (string, error) {
 	if len(args) == 0 || !gitSubcommands[args[0]] {
 		return "", fmt.Errorf("git subcommand not allowed: %v", args)
 	}
-	sanitized := make([]string, len(args))
-	copy(sanitized, args)
+	sanitized := make([]string, 0, len(args))
+	sanitized = append(sanitized, args[0])
+	for _, a := range args[1:] {
+		if !safeGitArg.MatchString(a) {
+			return "", fmt.Errorf("git arg contains unsafe characters: %q", a)
+		}
+		sanitized = append(sanitized, a)
+	}
 	cmd := exec.Command("git", sanitized...)
 	cmd.Dir = repo
 	out, err := cmd.CombinedOutput()
