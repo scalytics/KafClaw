@@ -52,4 +52,3 @@ docs/vendor/bundle/
 # Keep Node version pins tracked
 !.nvmrc
 !.node-version
-_tasks/provider-support.md
