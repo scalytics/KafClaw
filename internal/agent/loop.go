@@ -102,6 +102,7 @@ type Loop struct {
 	activeTraceID     string
 	activeMessageType string
 	chain             *middleware.Chain
+	cfg               *config.Config
 	subagents         *subagentManager
 	agentID           string
 	subagentAllowList []string
@@ -175,6 +176,8 @@ func NewLoop(opts LoopOptions) *Loop {
 		},
 		announceSent: make(map[string]time.Time),
 	}
+
+	loop.cfg = opts.Config
 
 	// Build middleware chain.
 	loop.chain = middleware.NewChain(opts.Provider)
@@ -349,6 +352,16 @@ func (l *Loop) ProcessDirectWithTrace(ctx context.Context, content, sessionKey, 
 		sess.AddMessage("assistant", response)
 		l.sessions.Save(sess)
 		return response, nil
+	}
+
+	// Task-type model routing: assess the message and swap provider if routing matches.
+	if l.cfg != nil && len(l.cfg.Model.TaskRouting) > 0 {
+		assessment := AssessTask(content)
+		if routed, err := provider.ResolveWithTaskType(l.cfg, l.agentID, assessment.Category); err == nil && routed != l.provider {
+			origProvider := l.chain.Provider
+			l.chain.Provider = routed
+			defer func() { l.chain.Provider = origProvider }()
+		}
 	}
 
 	// Build messages using the context builder
