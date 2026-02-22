@@ -14,21 +14,33 @@ import (
 
 // LFSClient wraps the KafScale LFS Proxy HTTP API for producing messages to Kafka.
 type LFSClient struct {
-	parsedBase *url.URL
+	baseURL    string // validated http(s) URL, no trailing slash
 	apiKey     string
 	httpClient *http.Client
 }
 
 // NewLFSClient creates a new LFS proxy client.
-// The baseURL is parsed and validated at construction time.
+// The baseURL is parsed and validated at construction time; only http and https
+// schemes are accepted.
 func NewLFSClient(baseURL, apiKey string) *LFSClient {
 	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		u = &url.URL{Scheme: "http", Host: "localhost:0"}
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return &LFSClient{
+			baseURL: "http://localhost:0",
+			apiKey:  apiKey,
+			httpClient: &http.Client{
+				Timeout: 30 * time.Second,
+			},
+		}
+	}
+	// Reconstruct from parsed parts to normalise.
+	safe := u.Scheme + "://" + u.Host
+	if u.Path != "" {
+		safe += u.Path
 	}
 	return &LFSClient{
-		parsedBase: u,
-		apiKey:     apiKey,
+		baseURL: safe,
+		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -51,11 +63,15 @@ type LFSEnvelope struct {
 
 // Produce sends a message to the LFS proxy which produces it to the given Kafka topic.
 func (c *LFSClient) Produce(ctx context.Context, topic string, requestID string, payload []byte) (*LFSEnvelope, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://placeholder/lfs/produce", bytes.NewReader(payload))
+	endpoint := c.baseURL + "/lfs/produce"
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		return nil, fmt.Errorf("lfs produce: invalid URL scheme")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("lfs produce: create request: %w", err)
 	}
-	req.URL = c.endpointURL("/lfs/produce")
 
 	req.Header.Set("X-Kafka-Topic", topic)
 	req.Header.Set("Content-Type", "application/json")
@@ -101,11 +117,15 @@ func (c *LFSClient) ProduceEnvelope(ctx context.Context, topic string, env *Grou
 
 // Healthy checks if the LFS proxy is reachable.
 func (c *LFSClient) Healthy(ctx context.Context) bool {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://placeholder/lfs/produce", nil)
+	endpoint := c.baseURL + "/lfs/produce"
+	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+		return false
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return false
 	}
-	req.URL = c.endpointURL("/lfs/produce")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return false
@@ -113,12 +133,4 @@ func (c *LFSClient) Healthy(ctx context.Context) bool {
 	resp.Body.Close()
 	// The proxy returns 400 for GET (method not allowed or missing topic), but that means it's up.
 	return resp.StatusCode < 500
-}
-
-// endpointURL returns a *url.URL for the given API path, derived from the
-// pre-validated parsedBase. The returned URL is a copy, not a reference.
-func (c *LFSClient) endpointURL(path string) *url.URL {
-	u := *c.parsedBase // shallow copy
-	u.Path = strings.TrimRight(u.Path, "/") + path
-	return &u
 }
