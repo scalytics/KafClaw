@@ -76,6 +76,9 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Enforce coverage gates
+        run: make test-critical
+
       - name: Security check gate
         run: go run ./cmd/kafclaw security check
 
