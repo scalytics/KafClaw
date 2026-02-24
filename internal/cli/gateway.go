@@ -243,7 +243,7 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 			router.SetOrchestratorHandler(orchHandler)
 		}
 		if cfg.Knowledge.Enabled && len(knowledgeTopics) > 0 {
-			router.SetKnowledgeHandler(group.NewKnowledgeHandler(timeSvc, cfg.Node.ClawID), knowledgeTopics)
+			router.SetKnowledgeHandler(group.NewKnowledgeHandler(timeSvc, cfg.Node.ClawID, cfg.Knowledge.GovernanceEnabled), knowledgeTopics)
 			fmt.Printf("🧠 Knowledge router enabled (%d topic(s))\n", len(knowledgeTopics))
 		}
 		go func() {

@@ -119,6 +119,12 @@ When `knowledge.enabled=true`, knowledge topics (`knowledge.topics.*`) consume/p
 
 `clawId`/`instanceId` are enforced at validation time, and `idempotencyKey` is persisted in `knowledge_idempotency` to prevent duplicate apply.
 
+Governance feature flag:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `knowledge.governanceEnabled` | bool | Enables proposal/vote/decision/fact apply paths (CLI + Kafka handler) |
+
 ## Knowledge Voting Policy
 
 `knowledge.voting` controls quorum-based governance for shared decisions.

@@ -17,14 +17,16 @@ type KnowledgeEnvelopeHandler interface {
 }
 
 type defaultKnowledgeHandler struct {
-	timeline *timeline.TimelineService
-	localID  string
+	timeline          *timeline.TimelineService
+	localID           string
+	governanceEnabled bool
 }
 
-func NewKnowledgeHandler(timeSvc *timeline.TimelineService, localClawID string) KnowledgeEnvelopeHandler {
+func NewKnowledgeHandler(timeSvc *timeline.TimelineService, localClawID string, governanceEnabled bool) KnowledgeEnvelopeHandler {
 	return &defaultKnowledgeHandler{
-		timeline: timeSvc,
-		localID:  strings.TrimSpace(localClawID),
+		timeline:          timeSvc,
+		localID:           strings.TrimSpace(localClawID),
+		governanceEnabled: governanceEnabled,
 	}
 }
 
@@ -35,6 +37,10 @@ func (h *defaultKnowledgeHandler) Process(topic string, raw []byte) error {
 	}
 	if err := env.ValidateBase(); err != nil {
 		return fmt.Errorf("validate knowledge envelope: %w", err)
+	}
+	if !h.governanceEnabled && isGovernedKnowledgeType(env.Type) {
+		slog.Debug("Knowledge governance disabled; skipping envelope", "type", env.Type, "topic", topic)
+		return nil
 	}
 	if h.localID != "" && strings.EqualFold(strings.TrimSpace(env.ClawID), h.localID) {
 		return nil
@@ -223,4 +229,13 @@ func mustJSONTags(tags []string) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+func isGovernedKnowledgeType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case knowledge.TypeProposal, knowledge.TypeVote, knowledge.TypeDecision, knowledge.TypeFact:
+		return true
+	default:
+		return false
+	}
 }

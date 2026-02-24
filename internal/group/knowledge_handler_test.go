@@ -17,7 +17,7 @@ func TestKnowledgeHandlerProcess_ValidAndIdempotent(t *testing.T) {
 	}
 	defer tl.Close()
 
-	h := NewKnowledgeHandler(tl, "local-claw")
+	h := NewKnowledgeHandler(tl, "local-claw", true)
 	env := knowledge.Envelope{
 		SchemaVersion:  knowledge.CurrentSchemaVersion,
 		Type:           knowledge.TypeProposal,
@@ -56,7 +56,7 @@ func TestKnowledgeHandlerProcess_RejectsMissingIdentity(t *testing.T) {
 	}
 	defer tl.Close()
 
-	h := NewKnowledgeHandler(tl, "local-claw")
+	h := NewKnowledgeHandler(tl, "local-claw", true)
 	env := knowledge.Envelope{
 		SchemaVersion:  knowledge.CurrentSchemaVersion,
 		Type:           knowledge.TypeVote,
@@ -83,7 +83,7 @@ func TestKnowledgeHandlerProcess_FactVersionPolicy(t *testing.T) {
 	}
 	defer tl.Close()
 
-	h := NewKnowledgeHandler(tl, "local-claw")
+	h := NewKnowledgeHandler(tl, "local-claw", true)
 	makeEnv := func(idem string, version int, object string) []byte {
 		env := knowledge.Envelope{
 			SchemaVersion:  knowledge.CurrentSchemaVersion,
@@ -149,7 +149,7 @@ func TestKnowledgeHandlerProcess_ProposalDecisionFactEndToEnd(t *testing.T) {
 	}
 	defer tl.Close()
 
-	h := NewKnowledgeHandler(tl, "local-claw")
+	h := NewKnowledgeHandler(tl, "local-claw", true)
 	now := time.Now()
 
 	makeRaw := func(idem string, msgType string, payload any) []byte {
@@ -232,5 +232,41 @@ func TestKnowledgeHandlerProcess_ProposalDecisionFactEndToEnd(t *testing.T) {
 	}
 	if fact == nil || fact.Version != 1 || fact.Object != "v2" || fact.ProposalID != "p-e2e" {
 		t.Fatalf("unexpected fact state: %+v", fact)
+	}
+}
+
+func TestKnowledgeHandlerProcess_GovernanceDisabledSkipsGovernedTypes(t *testing.T) {
+	tl, err := timeline.NewTimelineService(filepath.Join(t.TempDir(), "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+
+	h := NewKnowledgeHandler(tl, "local-claw", false)
+	env := knowledge.Envelope{
+		SchemaVersion:  knowledge.CurrentSchemaVersion,
+		Type:           knowledge.TypeProposal,
+		TraceID:        "trace-disabled",
+		Timestamp:      time.Now(),
+		IdempotencyKey: "idem-disabled",
+		ClawID:         "remote-claw",
+		InstanceID:     "inst-1",
+		Payload: knowledge.ProposalPayload{
+			ProposalID: "p-disabled",
+			Group:      "g1",
+			Statement:  "should be skipped",
+		},
+	}
+	raw, _ := json.Marshal(env)
+	if err := h.Process("group.g1.knowledge.proposals", raw); err != nil {
+		t.Fatalf("process governed envelope while disabled: %v", err)
+	}
+
+	prop, err := tl.GetKnowledgeProposal("p-disabled")
+	if err != nil {
+		t.Fatalf("get proposal: %v", err)
+	}
+	if prop != nil {
+		t.Fatalf("expected no proposal persisted when governance disabled, got %+v", prop)
 	}
 }

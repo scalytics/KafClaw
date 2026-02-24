@@ -21,6 +21,7 @@ func TestKnowledgeCLIProposeVoteDecisionsFacts(t *testing.T) {
 	  "group": {"lfsProxyUrl":"http://127.0.0.1:8080"},
 	  "knowledge": {
 	    "enabled": true,
+	    "governanceEnabled": true,
 	    "group": "g1",
 	    "topics": {
 	      "capabilities":"group.g1.knowledge.capabilities",
@@ -134,5 +135,27 @@ func TestKnowledgeCLIProposeVoteDecisionsFacts(t *testing.T) {
 func TestKnowledgeVoteRequiresProposalID(t *testing.T) {
 	if _, err := runRootCommand(t, "knowledge", "vote", "--vote=yes"); err == nil {
 		t.Fatal("expected missing proposal-id error")
+	}
+}
+
+func TestKnowledgeCLIRejectsWhenGovernanceDisabled(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := `{
+	  "node": {"clawId":"local-claw","instanceId":"inst-local"},
+	  "knowledge": {"enabled": true, "governanceEnabled": false, "group": "g1"}
+	}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	if _, err := runRootCommand(t, "knowledge", "propose", "--statement=x"); err == nil {
+		t.Fatal("expected governance disabled error")
 	}
 }

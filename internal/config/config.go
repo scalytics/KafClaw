@@ -283,12 +283,13 @@ type MemorySearchConfig struct {
 
 // KnowledgeConfig configures shared knowledge publication and voting.
 type KnowledgeConfig struct {
-	Enabled  bool                     `json:"enabled" envconfig:"ENABLED"`
-	Group    string                   `json:"group" envconfig:"GROUP"`
-	ShareMode string                  `json:"shareMode" envconfig:"SHARE_MODE"` // proposal|direct
-	Topics   KnowledgeTopicsConfig    `json:"topics"`
-	Publish  KnowledgePublishConfig   `json:"publish"`
-	Voting   KnowledgeVotingConfig    `json:"voting"`
+	Enabled           bool                   `json:"enabled" envconfig:"ENABLED"`
+	GovernanceEnabled bool                   `json:"governanceEnabled" envconfig:"GOVERNANCE_ENABLED"`
+	Group             string                 `json:"group" envconfig:"GROUP"`
+	ShareMode         string                 `json:"shareMode" envconfig:"SHARE_MODE"` // proposal|direct
+	Topics            KnowledgeTopicsConfig  `json:"topics"`
+	Publish           KnowledgePublishConfig `json:"publish"`
+	Voting            KnowledgeVotingConfig  `json:"voting"`
 }
 
 // KnowledgeTopicsConfig defines topic names used by the knowledge protocol.
@@ -619,9 +620,10 @@ func DefaultConfig() *Config {
 			},
 		},
 		Knowledge: KnowledgeConfig{
-			Enabled:   false,
-			Group:     "kafclaw",
-			ShareMode: "proposal",
+			Enabled:           false,
+			GovernanceEnabled: true,
+			Group:             "kafclaw",
+			ShareMode:         "proposal",
 			Topics: KnowledgeTopicsConfig{
 				Capabilities: "group.kafclaw.knowledge.capabilities",
 				Presence:     "group.kafclaw.knowledge.presence",

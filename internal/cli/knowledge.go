@@ -121,11 +121,12 @@ func runKnowledgeStatus(cmd *cobra.Command, args []string) error {
 	factsCount, _ := timeSvc.CountKnowledgeFacts(strings.TrimSpace(cfg.Knowledge.Group))
 
 	out := map[string]any{
-		"enabled":    cfg.Knowledge.Enabled,
-		"group":      cfg.Knowledge.Group,
-		"clawId":     cfg.Node.ClawID,
-		"instanceId": cfg.Node.InstanceID,
-		"topics":     cfg.Knowledge.Topics,
+		"enabled":           cfg.Knowledge.Enabled,
+		"governanceEnabled": cfg.Knowledge.GovernanceEnabled,
+		"group":             cfg.Knowledge.Group,
+		"clawId":            cfg.Node.ClawID,
+		"instanceId":        cfg.Node.InstanceID,
+		"topics":            cfg.Knowledge.Topics,
 		"counts": map[string]int{
 			"pending":  len(pending),
 			"approved": len(approved),
@@ -140,6 +141,9 @@ func runKnowledgeStatus(cmd *cobra.Command, args []string) error {
 func runKnowledgePropose(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
+		return err
+	}
+	if err := requireKnowledgeGovernanceEnabled(cfg); err != nil {
 		return err
 	}
 	timeSvc, err := loadGroupTimeline()
@@ -220,6 +224,9 @@ func runKnowledgePropose(cmd *cobra.Command, args []string) error {
 func runKnowledgeVote(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
+		return err
+	}
+	if err := requireKnowledgeGovernanceEnabled(cfg); err != nil {
 		return err
 	}
 	timeSvc, err := loadGroupTimeline()
@@ -358,6 +365,13 @@ func runKnowledgeVote(cmd *cobra.Command, args []string) error {
 }
 
 func runKnowledgeDecisions(cmd *cobra.Command, args []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if err := requireKnowledgeGovernanceEnabled(cfg); err != nil {
+		return err
+	}
 	timeSvc, err := loadGroupTimeline()
 	if err != nil {
 		return err
@@ -381,6 +395,13 @@ func runKnowledgeDecisions(cmd *cobra.Command, args []string) error {
 }
 
 func runKnowledgeFacts(cmd *cobra.Command, args []string) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if err := requireKnowledgeGovernanceEnabled(cfg); err != nil {
+		return err
+	}
 	timeSvc, err := loadGroupTimeline()
 	if err != nil {
 		return err
@@ -456,6 +477,16 @@ func printKnowledgeOutput(w io.Writer, v map[string]any) error {
 	}
 	if count, ok := v["count"]; ok {
 		fmt.Fprintf(w, "count: %v\n", count)
+	}
+	return nil
+}
+
+func requireKnowledgeGovernanceEnabled(cfg *config.Config) error {
+	if cfg == nil {
+		return fmt.Errorf("knowledge governance requires valid config")
+	}
+	if !cfg.Knowledge.Enabled || !cfg.Knowledge.GovernanceEnabled {
+		return fmt.Errorf("knowledge governance is disabled; set knowledge.enabled=true and knowledge.governanceEnabled=true")
 	}
 	return nil
 }

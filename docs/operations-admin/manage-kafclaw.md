@@ -333,6 +333,7 @@ Notes:
 - Quorum voting policy: for pools `>= knowledge.voting.minPoolSize`, approvals require `yes >= quorumYes` and `yes > no`; rejections require `no >= quorumNo`; proposals expire after `timeoutSec`
 - By default (`allowSelfVote=false`), proposer self-votes are ignored in quorum math
 - Shared fact updates are sequentially versioned (`v1`, `v2`, ...); non-sequential updates are treated as conflicts and do not overwrite latest accepted state
+- Governance apply paths are feature-gated by `knowledge.governanceEnabled` (when `false`, proposal/vote/decision/fact write/apply paths are disabled)
 - `group status` also prints resolved topic names and LFS health
 - `group members` reads roster snapshots from timeline DB
 

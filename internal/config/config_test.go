@@ -48,6 +48,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Knowledge.ShareMode != "proposal" {
 		t.Errorf("expected knowledge shareMode proposal, got %s", cfg.Knowledge.ShareMode)
 	}
+	if !cfg.Knowledge.GovernanceEnabled {
+		t.Error("expected knowledge.governanceEnabled true by default")
+	}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -357,6 +360,9 @@ func TestLoadMemoryKnowledgeNormalizationAndTopics(t *testing.T) {
 	if cfg.Knowledge.ShareMode != "proposal" {
 		t.Fatalf("expected knowledge shareMode fallback proposal, got %s", cfg.Knowledge.ShareMode)
 	}
+	if !cfg.Knowledge.GovernanceEnabled {
+		t.Fatalf("expected governance enabled default after normalization")
+	}
 	if cfg.Knowledge.Topics.Proposals != "group.teamalpha.knowledge.proposals" ||
 		cfg.Knowledge.Topics.Votes != "group.teamalpha.knowledge.votes" ||
 		cfg.Knowledge.Topics.Facts != "group.teamalpha.knowledge.facts" {
@@ -492,10 +498,11 @@ func TestNormalizeMemoryKnowledgeConfigBranches(t *testing.T) {
 			},
 		},
 		Knowledge: KnowledgeConfig{
-			Group:    "",
-			ShareMode: "",
-			Topics:   DefaultConfig().Knowledge.Topics,
-			Publish:  KnowledgePublishConfig{},
+			GovernanceEnabled: true,
+			Group:             "",
+			ShareMode:         "",
+			Topics:            DefaultConfig().Knowledge.Topics,
+			Publish:           KnowledgePublishConfig{},
 			Voting: KnowledgeVotingConfig{
 				MinPoolSize: 0,
 				QuorumYes:   0,
