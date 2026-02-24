@@ -45,5 +45,10 @@ Memory safety flags:
 - `kafclaw configure --memory-embedding-enabled-set --memory-embedding-enabled=true --memory-embedding-provider local-hf --memory-embedding-model BAAI/bge-small-en-v1.5 --memory-embedding-dimension 384`
 - `kafclaw configure --memory-embedding-model <new-model> --confirm-memory-wipe` when switching an already-used embedding.
 
+Knowledge governance notes:
+- Knowledge envelopes require `schemaVersion`, `traceId`, `idempotencyKey`, `clawId`, and `instanceId`.
+- Duplicate knowledge envelopes (same `idempotencyKey`) are ignored after first apply.
+- Voting outcomes follow quorum policy (`approved|rejected|expired|pending`) from `knowledge.voting.*`.
+
 Skills execution example:
 - `kafclaw skills exec <skill-id> --input '{"text":"..."}'`

@@ -113,6 +113,19 @@ When `knowledge.enabled=true`, knowledge topics (`knowledge.topics.*`) consume/p
 
 `clawId`/`instanceId` are enforced at validation time, and `idempotencyKey` is persisted in `knowledge_idempotency` to prevent duplicate apply.
 
+## Knowledge Voting Policy
+
+`knowledge.voting` controls quorum-based governance for shared decisions.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `knowledge.voting.enabled` | bool | Enable voting workflow |
+| `knowledge.voting.minPoolSize` | int | Activate voting when active pool size is at least this value |
+| `knowledge.voting.quorumYes` | int | Minimum yes votes required for approval |
+| `knowledge.voting.quorumNo` | int | Minimum no votes required for rejection |
+| `knowledge.voting.timeoutSec` | int | Proposal timeout window (seconds) |
+| `knowledge.voting.allowSelfVote` | bool | Allow proposer to cast a vote on own proposal |
+
 ## Model Configuration
 
 ```json

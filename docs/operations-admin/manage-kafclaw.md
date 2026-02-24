@@ -328,6 +328,9 @@ Notes:
 - Group state is persisted in timeline settings (`group_name`, `group_active`)
 - Heartbeat continuity metadata is persisted in settings (`group_heartbeat_last_attempt_at`, `group_heartbeat_last_success_at`, `group_heartbeat_seq`)
 - On gateway startup, durable runtime reconciliation records counters for open tasks/pending deliveries (`runtime_reconcile_*`) before work intake
+- Knowledge envelope dedup is persisted in `knowledge_idempotency` (idempotency key + claw identity)
+- Quorum voting policy: for pools `>= knowledge.voting.minPoolSize`, approvals require `yes >= quorumYes` and `yes > no`; rejections require `no >= quorumNo`; proposals expire after `timeoutSec`
+- By default (`allowSelfVote=false`), proposer self-votes are ignored in quorum math
 - `group status` also prints resolved topic names and LFS health
 - `group members` reads roster snapshots from timeline DB
 
