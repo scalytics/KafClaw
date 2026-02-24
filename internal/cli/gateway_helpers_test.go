@@ -115,6 +115,57 @@ func TestCollectKnowledgeTopics(t *testing.T) {
 	}
 }
 
+func TestProbeEmbeddingRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Memory.Embedding.Enabled = false
+	health := probeEmbeddingRuntime(cfg)
+	if health.Ready {
+		t.Fatalf("expected unhealthy when embedding disabled: %+v", health)
+	}
+
+	cfg = config.DefaultConfig()
+	cfg.Memory.Embedding.Provider = "openai"
+	cfg.Memory.Embedding.Model = "text-embedding-3-small"
+	cfg.Memory.Embedding.Dimension = 1536
+	health = probeEmbeddingRuntime(cfg)
+	if !health.Ready || health.Status != "ok" {
+		t.Fatalf("expected ready for non-local provider: %+v", health)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg = config.DefaultConfig()
+	cfg.Memory.Embedding.Provider = "local-hf"
+	cfg.Memory.Embedding.Endpoint = srv.URL
+	health = probeEmbeddingRuntime(cfg)
+	if !health.Ready || health.HTTPStatus != http.StatusOK {
+		t.Fatalf("expected local runtime healthy probe, got %+v", health)
+	}
+}
+
+func TestEmbeddingCachePresent(t *testing.T) {
+	if embeddingCachePresent("") {
+		t.Fatal("empty cache dir should be false")
+	}
+	if embeddingCachePresent(filepath.Join(t.TempDir(), "missing")) {
+		t.Fatal("missing cache dir should be false")
+	}
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if !embeddingCachePresent(cacheDir) {
+		t.Fatal("expected existing cache dir to be detected")
+	}
+}
+
 func TestRunGitAndRunGhRepoValidation(t *testing.T) {
 	if _, err := runGit(""); err == nil {
 		t.Fatal("expected runGit to reject empty repo")

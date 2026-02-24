@@ -477,6 +477,10 @@ User Query --> Embed(query) --> VectorStore.Search(top 5) --> Filter(score >= 0.
 | `/api/v1/memory/reset` | POST | Reset layer or all |
 | `/api/v1/memory/config` | POST | Update memory settings |
 | `/api/v1/memory/prune` | POST | Trigger lifecycle pruning |
+| `/api/v1/memory/embedding/status` | GET | Embedding runtime/config status + index/install metadata |
+| `/api/v1/memory/embedding/healthz` | GET | Embedding runtime readiness probe |
+| `/api/v1/memory/embedding/install` | POST | Queue local embedding model install/bootstrap |
+| `/api/v1/memory/embedding/reindex` | POST | Wipe/rebuild embedding index (`confirmWipe=true`) |
 
 ### Graceful Degradation
 

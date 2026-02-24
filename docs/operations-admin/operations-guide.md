@@ -413,6 +413,10 @@ Auth note:
 | POST | `/api/v1/memory/reset` | Reset layer or all |
 | POST | `/api/v1/memory/config` | Update memory settings |
 | POST | `/api/v1/memory/prune` | Trigger lifecycle pruning |
+| GET | `/api/v1/memory/embedding/status` | Embedding runtime/config status + index/install metadata |
+| GET | `/api/v1/memory/embedding/healthz` | Embedding runtime readiness probe |
+| POST | `/api/v1/memory/embedding/install` | Queue local embedding model install/bootstrap |
+| POST | `/api/v1/memory/embedding/reindex` | Wipe and rebuild embedding index (`confirmWipe=true` required) |
 
 **Settings and Repo:**
 

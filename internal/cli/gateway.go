@@ -2473,6 +2473,183 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "deleted": deleted})
 		})
 
+		// API: Embedding Runtime Status (GET)
+		mux.HandleFunc("/api/v1/memory/embedding/status", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			health := probeEmbeddingRuntime(cfg)
+			embeddedCount, _ := countEmbeddedMemoryChunks()
+			pendingInstallAt, _ := timeSvc.GetSetting("memory_embedding_install_requested_at")
+			pendingInstallModel, _ := timeSvc.GetSetting("memory_embedding_install_model")
+
+			json.NewEncoder(w).Encode(map[string]any{
+				"status": "ok",
+				"embedding": map[string]any{
+					"enabled":         cfg.Memory.Embedding.Enabled,
+					"provider":        cfg.Memory.Embedding.Provider,
+					"model":           cfg.Memory.Embedding.Model,
+					"dimension":       cfg.Memory.Embedding.Dimension,
+					"normalize":       cfg.Memory.Embedding.Normalize,
+					"cacheDir":        cfg.Memory.Embedding.CacheDir,
+					"autoDownload":    cfg.Memory.Embedding.AutoDownload,
+					"endpoint":        cfg.Memory.Embedding.Endpoint,
+					"startupTimeoutS": cfg.Memory.Embedding.StartupTimeoutSec,
+					"fingerprint":     memoryEmbeddingFingerprint(cfg),
+				},
+				"runtime": map[string]any{
+					"ready":      health.Ready,
+					"status":     health.Status,
+					"detail":     health.Detail,
+					"checkedAt":  health.CheckedAt,
+					"httpStatus": health.HTTPStatus,
+				},
+				"index": map[string]any{
+					"embeddedChunks": embeddedCount,
+				},
+				"install": map[string]any{
+					"pending":            strings.TrimSpace(pendingInstallAt) != "",
+					"requestedAt":        strings.TrimSpace(pendingInstallAt),
+					"requestedModel":     strings.TrimSpace(pendingInstallModel),
+					"cachePathAvailable": embeddingCachePresent(cfg.Memory.Embedding.CacheDir),
+				},
+			})
+		})
+
+		// API: Embedding Runtime Health (GET)
+		mux.HandleFunc("/api/v1/memory/embedding/healthz", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			health := probeEmbeddingRuntime(cfg)
+			code := http.StatusOK
+			if !health.Ready {
+				code = http.StatusServiceUnavailable
+			}
+			w.WriteHeader(code)
+			json.NewEncoder(w).Encode(map[string]any{
+				"ready":      health.Ready,
+				"status":     health.Status,
+				"detail":     health.Detail,
+				"checkedAt":  health.CheckedAt,
+				"httpStatus": health.HTTPStatus,
+			})
+		})
+
+		// API: Embedding Runtime Install Bootstrap (POST)
+		mux.HandleFunc("/api/v1/memory/embedding/install", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var body struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			model := strings.TrimSpace(body.Model)
+			if model == "" {
+				model = strings.TrimSpace(cfg.Memory.Embedding.Model)
+			}
+			if model == "" {
+				http.Error(w, "embedding model is required", http.StatusBadRequest)
+				return
+			}
+			_ = timeSvc.SetSetting("memory_embedding_install_requested_at", time.Now().UTC().Format(time.RFC3339))
+			_ = timeSvc.SetSetting("memory_embedding_install_model", model)
+
+			cacheDir := strings.TrimSpace(cfg.Memory.Embedding.CacheDir)
+			if cacheDir != "" {
+				expanded := cacheDir
+				if strings.HasPrefix(expanded, "~") {
+					if home, err := os.UserHomeDir(); err == nil {
+						expanded = filepath.Join(home, strings.TrimPrefix(expanded, "~"))
+					}
+				}
+				_ = os.MkdirAll(expanded, 0o755)
+			}
+
+			json.NewEncoder(w).Encode(map[string]any{
+				"status": "ok",
+				"action": "install-requested",
+				"model":  model,
+			})
+		})
+
+		// API: Embedding Runtime Reindex (POST)
+		mux.HandleFunc("/api/v1/memory/embedding/reindex", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var body struct {
+				ConfirmWipe bool   `json:"confirmWipe"`
+				Reason      string `json:"reason"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid body", http.StatusBadRequest)
+				return
+			}
+			if !body.ConfirmWipe {
+				http.Error(w, "confirmWipe must be true", http.StatusBadRequest)
+				return
+			}
+			wiped, err := wipeAllMemoryChunks()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			reason := strings.TrimSpace(body.Reason)
+			if reason == "" {
+				reason = "manual_reindex"
+			}
+			_ = timeSvc.AddEvent(&timeline.TimelineEvent{
+				EventID:        fmt.Sprintf("MEMORY_EMBED_REINDEX_%d", time.Now().UnixNano()),
+				Timestamp:      time.Now(),
+				SenderID:       "system",
+				SenderName:     "KafClaw",
+				EventType:      "SYSTEM",
+				ContentText:    fmt.Sprintf("embedding reindex requested; wiped_chunks=%d reason=%s", wiped, reason),
+				Classification: "MEMORY_EMBEDDING_REINDEX",
+				Authorized:     true,
+			})
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":      "ok",
+				"wipedChunks": wiped,
+				"reason":      reason,
+			})
+		})
+
 		// API: Work Repo (GET/POST)
 		mux.HandleFunc("/api/v1/workrepo", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -3435,6 +3612,77 @@ func normalizeWhatsAppJID(jid string) string {
 	}
 	// Default to user JID.
 	return jid + "@s.whatsapp.net"
+}
+
+type embeddingRuntimeHealth struct {
+	Ready      bool      `json:"ready"`
+	Status     string    `json:"status"`
+	Detail     string    `json:"detail"`
+	CheckedAt  time.Time `json:"checkedAt"`
+	HTTPStatus int       `json:"httpStatus,omitempty"`
+}
+
+func probeEmbeddingRuntime(cfg *config.Config) embeddingRuntimeHealth {
+	out := embeddingRuntimeHealth{
+		Ready:     false,
+		Status:    "degraded",
+		Detail:    "embedding configuration not ready",
+		CheckedAt: time.Now().UTC(),
+	}
+	if cfg == nil {
+		out.Detail = "config is nil"
+		return out
+	}
+	if err := validateEmbeddingHardGate(cfg); err != nil {
+		out.Detail = err.Error()
+		return out
+	}
+	providerID := strings.ToLower(strings.TrimSpace(cfg.Memory.Embedding.Provider))
+	if providerID != "local-hf" {
+		out.Ready = true
+		out.Status = "ok"
+		out.Detail = "embedding provider configured (no local runtime probe required)"
+		return out
+	}
+	endpoint := strings.TrimSpace(cfg.Memory.Embedding.Endpoint)
+	if endpoint == "" {
+		out.Detail = "memory.embedding.endpoint is empty"
+		return out
+	}
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	healthURL := strings.TrimRight(endpoint, "/") + "/healthz"
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		out.Detail = fmt.Sprintf("local embedding runtime unreachable: %v", err)
+		return out
+	}
+	defer resp.Body.Close()
+	out.HTTPStatus = resp.StatusCode
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		out.Ready = true
+		out.Status = "ok"
+		out.Detail = "local embedding runtime healthy"
+		return out
+	}
+	out.Detail = fmt.Sprintf("local embedding runtime unhealthy (status=%d)", resp.StatusCode)
+	return out
+}
+
+func embeddingCachePresent(cacheDir string) bool {
+	p := strings.TrimSpace(cacheDir)
+	if p == "" {
+		return false
+	}
+	if strings.HasPrefix(p, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+		}
+	}
+	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+		return true
+	}
+	return false
 }
 
 type RepoItem struct {
