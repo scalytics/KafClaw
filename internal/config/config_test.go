@@ -408,6 +408,42 @@ func TestLoadMemoryEmbeddingDisabledNormalizesProvider(t *testing.T) {
 	}
 }
 
+func TestLoadKnowledgeGovernanceFlagDefaultsAndPreservesExplicitFalse(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfgPath := filepath.Join(configDir, "config.json")
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	// Missing governanceEnabled should keep default true.
+	if err := os.WriteFile(cfgPath, []byte(`{"knowledge":{"enabled":true,"group":"g1"}}`), 0o600); err != nil {
+		t.Fatalf("write config missing governanceEnabled: %v", err)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config missing governanceEnabled: %v", err)
+	}
+	if !cfg.Knowledge.GovernanceEnabled {
+		t.Fatal("expected governanceEnabled=true when field is missing")
+	}
+
+	// Explicit false should be preserved.
+	if err := os.WriteFile(cfgPath, []byte(`{"knowledge":{"enabled":true,"governanceEnabled":false,"group":"g1"}}`), 0o600); err != nil {
+		t.Fatalf("write config explicit governanceEnabled false: %v", err)
+	}
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load config explicit governanceEnabled false: %v", err)
+	}
+	if cfg.Knowledge.GovernanceEnabled {
+		t.Fatal("expected governanceEnabled=false when explicitly configured")
+	}
+}
+
 func TestLoadMemoryKnowledgePreservesValidValues(t *testing.T) {
 	tmpDir := t.TempDir()
 	configDir := filepath.Join(tmpDir, ".kafclaw")

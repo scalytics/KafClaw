@@ -119,6 +119,8 @@ When `knowledge.enabled=true`, knowledge topics (`knowledge.topics.*`) consume/p
 
 `clawId`/`instanceId` are enforced at validation time, and `idempotencyKey` is persisted in `knowledge_idempotency` to prevent duplicate apply.
 
+See [Knowledge Contracts](/reference/knowledge-contracts/) for payload examples.
+
 Governance feature flag:
 
 | Key | Type | Description |
