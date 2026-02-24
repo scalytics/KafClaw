@@ -160,7 +160,7 @@ For release-binary install flows (`--latest`, `--version`, `--list-releases`, un
 
 ### LAN / Remote Access
 
-By default, KafClaw binds to `127.0.0.1` — only reachable from the local machine. This is an intentional security default.
+By default, KafClaw binds to `127.0.0.1` - only reachable from the local machine. This is an intentional security default.
 
 To make the gateway accessible from other machines on your LAN (e.g., Jetson Nano serving a home network):
 
@@ -373,7 +373,7 @@ Delivery worker polls every 5 seconds, retries up to 5 times with exponential ba
 
 ## 7. API Reference
 
-### Port 18790 — API Server
+### Port 18790 - API Server
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -385,7 +385,7 @@ Auth note:
 - For Slack/Teams/WhatsApp provider users: auth is enforced through provider bridge + channel access controls (not manual gateway bearer tokens).
 - Direct clients obtain this token out-of-band from the operator; the API does not issue tokens.
 
-### Port 18791 — Dashboard API
+### Port 18791 - Dashboard API
 
 **Status and Auth:**
 
@@ -480,7 +480,7 @@ Auth note:
 | GET | `/api/v1/approvals/pending` | Pending approvals |
 | POST | `/api/v1/approvals/{id}` | Approve/deny |
 
-### Port 18888 — channel bridge sidecar
+### Port 18888 - channel bridge sidecar
 
 | Method | Path | Description |
 |--------|------|-------------|

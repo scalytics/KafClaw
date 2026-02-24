@@ -21,7 +21,7 @@ Primary command groups:
 - `kafclaw completion` - generate shell completion scripts
 - `kafclaw whatsapp-setup` / `kafclaw whatsapp-auth` - WhatsApp setup and auth controls
 - `kafclaw pairing` - Slack/Teams pairing approvals
-- `kafclaw group` - group collaboration controls
+- `kafclaw group` - group communication controls
 - `kafclaw knowledge` - shared knowledge governance (`status|propose|vote|decisions|facts`)
 - `kafclaw kshark` - Kafka diagnostics
 - `kafclaw version` - print build version

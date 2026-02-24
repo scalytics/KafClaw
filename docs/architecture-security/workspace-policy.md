@@ -22,7 +22,7 @@ KafClaw uses a fixed workspace for all bot state:
 ## What Does NOT Live There
 
 - Work repo artifacts (these go to `~/.kafclaw/work-repo`)
-- System repo (identity/skills repo — cloned separately)
+- System repo (identity/skills repo - cloned separately)
 
 ## Rules
 

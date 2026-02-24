@@ -74,6 +74,28 @@ kafclaw status
 kafclaw doctor
 ```
 
+## Node Identity (Required for Shared Knowledge)
+
+`node.clawId` and `node.instanceId` identify who published a knowledge envelope.
+They are required for proposal/vote/decision/fact workflows.
+
+```json
+{
+  "node": {
+    "clawId": "claw-a",
+    "instanceId": "inst-a"
+  }
+}
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `node.clawId` | string | Stable claw identity used for voting and attribution |
+| `node.instanceId` | string | Runtime instance identity for a specific process |
+
+Operational note:
+- Missing `node.clawId`/`node.instanceId` blocks governed knowledge commands and apply paths.
+
 ## Memory Embedding Configuration
 
 `memory.embedding` is treated as required for semantic memory operation.
@@ -232,7 +254,7 @@ Each provider entry accepts `apiKey` and `apiBase`. See [LLM Providers](/referen
 
 - `OPENAI_API_KEY`
 - `OPENROUTER_API_KEY`
-- `KAFCLAW_MODEL` — global model (e.g. `claude/claude-sonnet-4-5`)
+- `KAFCLAW_MODEL` - global model (e.g. `claude/claude-sonnet-4-5`)
 - `KAFCLAW_AGENTS_WORKSPACE`
 - `KAFCLAW_AGENTS_WORK_REPO_PATH`
 - `KAFCLAW_GATEWAY_HOST`

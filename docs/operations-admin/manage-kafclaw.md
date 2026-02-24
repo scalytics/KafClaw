@@ -19,7 +19,7 @@ Operator-focused guide for managing KafClaw from CLI and runtime endpoints.
 | `kafclaw config` | Low-level dotted-path config read/write/unset |
 | `kafclaw configure` | Guided/non-interactive config updates (subagents, skills, Kafka group security) |
 | `kafclaw skills` | Skills lifecycle (`enable/disable/list/status/enable-skill/disable-skill/verify/install/update/exec/auth/prereq`) |
-| `kafclaw group` | Join/leave/status/members for Kafka collaboration group |
+| `kafclaw group` | Join/leave/status/members for Kafka communication group |
 | `kafclaw knowledge` | Shared knowledge governance (`status`, `propose`, `vote`, `decisions`, `facts`) |
 | `kafclaw kshark` | Kafka connectivity and protocol diagnostics |
 | `kafclaw agent -m` | Single-shot direct CLI interaction with agent loop |
@@ -261,7 +261,7 @@ Use `kafclaw security` for consolidated security posture and deep skill audits.
 This guide stays as the command-surface index. Detailed flows moved to:
 
 - [Memory Governance Operations](/memory-management/memory-governance-operations/)
-- [Group and Kafka Operations](/collaboration/group-kafka-operations/)
+- [Group and Kafka Communication Operations](/collaboration/group-kafka-operations/)
 
 Quick examples:
 
@@ -271,9 +271,9 @@ Quick examples:
 ./kafclaw config set providers.openai.apiBase "https://openrouter.ai/api/v1"
 ```
 
-## 7. Group Collaboration Operations
+## 7. Group Communication Operations
 
-See [Group and Kafka Operations](/collaboration/group-kafka-operations/) for full runbook and security config examples.
+See [Group and Kafka Communication Operations](/collaboration/group-kafka-operations/) for full runbook and security config examples.
 
 Quick lifecycle:
 
@@ -286,7 +286,7 @@ Quick lifecycle:
 
 ## 8. Kafka Diagnostics with KShark
 
-Detailed diagnostics and options are in [Group and Kafka Operations](/collaboration/group-kafka-operations/).
+Detailed diagnostics and options are in [Group and Kafka Communication Operations](/collaboration/group-kafka-operations/).
 
 Quick commands:
 

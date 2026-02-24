@@ -16,7 +16,8 @@ Private memory, durability, embeddings, and shared knowledge governance in one p
 
 ## Core Pages
 
-- [Memory Notes](/agent-concepts/memory-notes/)
+- [Memory Architecture and Notes](/agent-concepts/memory-notes/)
+- [Durable Memory Concept (Runbook)](/memory-management/memory-governance-operations/#durable-memory-concept)
 - [Architecture: Timeline and Memory](/architecture-security/architecture-timeline/)
 - [Knowledge Contracts](/reference/knowledge-contracts/)
 - [Memory Governance Operations](/memory-management/memory-governance-operations/)

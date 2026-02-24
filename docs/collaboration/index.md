@@ -1,22 +1,22 @@
 ---
-title: Collaboration
+title: Communication and Channels
 nav_order: 5
 has_children: true
 ---
 
-Group/Kafka collaboration, integrations, and distributed multi-claw workflows.
+Channel providers, Kafka communication, and distributed multi-claw workflows.
 
-## Core Collaboration Topics
+## Core Topics
 
 - Group join/leave/status/members lifecycle
 - Kafka topic contracts and envelope idempotency
 - Presence/capability announcements across claws
 - Delegation and trace exchange
-- Integrations that feed collaboration workflows
+- Integrations that feed communication workflows
 
 ## Start Points
 
-- [Group and Kafka Operations](/collaboration/group-kafka-operations/)
+- [Group and Kafka Communication Operations](/collaboration/group-kafka-operations/)
 - [Integrations](/integrations/)
 - [KafClaw Management Guide](/operations-admin/manage-kafclaw/)
 - [KafClaw Operations Guide](/operations-admin/operations-guide/)

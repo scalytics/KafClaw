@@ -17,3 +17,41 @@
     --border-color: #2a3854;
   }
 }
+
+@media (min-width: 66.5rem) {
+  :root {
+    --kc-sidebar-width: calc(15rem + 30px);
+  }
+
+  .side-bar {
+    width: var(--kc-sidebar-width);
+  }
+
+  .site-nav,
+  .site-header,
+  .site-footer {
+    width: 100%;
+  }
+
+  .side-bar + .main {
+    margin-left: var(--kc-sidebar-width);
+    width: calc(90vw - var(--kc-sidebar-width));
+    max-width: calc(90vw - var(--kc-sidebar-width));
+    margin-right: 0;
+  }
+
+  .side-bar + .main .main-content-wrap {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 100px;
+    padding-right: 24px;
+  }
+
+  .side-bar + .main .main-header {
+    padding-left: 70px;
+    padding-right: 24px;
+    box-sizing: border-box;
+  }
+}

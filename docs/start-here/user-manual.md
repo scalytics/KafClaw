@@ -6,7 +6,7 @@ nav_order: 2
 
 # KafClaw User Manual
 
-A comprehensive guide to installing, configuring, and using KafClaw — a personal AI assistant framework written in Go with an Electron desktop frontend.
+A comprehensive guide to installing, configuring, and using KafClaw - a personal AI assistant framework written in Go with an Electron desktop frontend.
 
 ---
 
@@ -108,20 +108,127 @@ kafclaw gateway
 ```
 
 Once the gateway is running:
-- **API server** — `http://localhost:18790`
-- **Web dashboard** — `http://localhost:18791`
-- **WhatsApp** — connects automatically if configured
+- **API server** - `http://localhost:18790`
+- **Web dashboard** - `http://localhost:18791`
+- **WhatsApp** - connects automatically if configured
 
 ### Logic Flow
 
-1. **Input** — A message arrives (WhatsApp, CLI, Web UI, scheduler).
-2. **Bus** — Published to the message bus as an InboundMessage.
-3. **Dedup** — Idempotency key checked to prevent reprocessing.
-4. **Context** — Context builder assembles system prompt from soul files, working memory, observations, skills, and RAG context.
-5. **Processing** — LLM decides if tools are needed.
-6. **Tool Loop** — If a tool is called, policy engine evaluates access, tool executes, result feeds back to LLM. Repeats up to 20 iterations.
-7. **Post-Processing** — Response saved to session, indexed into memory, observer enqueued.
-8. **Delivery** — Response published to message bus, channel delivers to user.
+<style>
+  .kc-logic-wrap {
+    margin: 16px 0 8px;
+    border: 1px solid #d9e2f0;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #f7fbff 0%, #eef4ff 100%);
+    padding: 16px;
+  }
+  .kc-logic-intro {
+    margin: 0 0 12px;
+    color: #27405f;
+    font-size: 0.96rem;
+  }
+  .kc-logic-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .kc-logic-step {
+    position: relative;
+    min-height: 124px;
+    border-radius: 12px;
+    border: 1px solid #c9d8ef;
+    background: #ffffff;
+    padding: 10px 10px 12px;
+    box-shadow: 0 4px 14px rgba(24, 58, 106, 0.08);
+  }
+  .kc-logic-step strong {
+    display: block;
+    color: #103f7a;
+    margin-bottom: 5px;
+    font-size: 0.92rem;
+  }
+  .kc-logic-step p {
+    margin: 0;
+    color: #314e72;
+    font-size: 0.86rem;
+    line-height: 1.38;
+  }
+  .kc-logic-badge {
+    display: inline-block;
+    margin-bottom: 6px;
+    border-radius: 999px;
+    padding: 2px 8px;
+    background: #e8f0ff;
+    color: #174487;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  @media (max-width: 1050px) {
+    .kc-logic-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    .kc-logic-wrap {
+      padding: 12px;
+    }
+    .kc-logic-grid {
+      grid-template-columns: 1fr;
+      gap: 9px;
+    }
+    .kc-logic-step {
+      min-height: 0;
+    }
+  }
+</style>
+
+<div class="kc-logic-wrap" role="img" aria-label="KafClaw request processing logic flow infographic">
+  <p class="kc-logic-intro">
+    The runtime always follows this order, with tool usage looping until the model is ready to answer.
+  </p>
+  <div class="kc-logic-grid">
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 1</span>
+      <strong>Input</strong>
+      <p>A message enters from WhatsApp, CLI, Web UI, or scheduler.</p>
+    </article>
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 2</span>
+      <strong>Bus</strong>
+      <p>The inbound envelope is published on the message bus.</p>
+    </article>
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 3</span>
+      <strong>Dedup</strong>
+      <p>Idempotency keys block duplicate processing.</p>
+    </article>
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 4</span>
+      <strong>Context</strong>
+      <p>System prompt is built from soul files, memory layers, skills, and RAG context.</p>
+    </article>
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 5</span>
+      <strong>Processing</strong>
+      <p>The LLM plans response strategy and decides whether tools are needed.</p>
+    </article>
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 6</span>
+      <strong>Tool Loop</strong>
+      <p>Policy checks run, tools execute, and results return to the model, up to 20 iterations.</p>
+    </article>
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 7</span>
+      <strong>Post-Processing</strong>
+      <p>Session is updated, memory indexing runs, and observer jobs are queued.</p>
+    </article>
+    <article class="kc-logic-step">
+      <span class="kc-logic-badge">Step 8</span>
+      <strong>Delivery</strong>
+      <p>Response is published outbound and delivered by the active channel.</p>
+    </article>
+  </div>
+</div>
 
 ---
 
@@ -327,17 +434,17 @@ http://localhost:18791
 
 ### Features
 
-- **Timeline View** (`/timeline`) — Full conversation history with trace IDs, sender info, event types, classifications. Auto-refreshes every 5 seconds.
+- **Timeline View** (`/timeline`) - Full conversation history with trace IDs, sender info, event types, classifications. Auto-refreshes every 5 seconds.
 
-- **Trace Viewer** — Drill into individual request flows: inbound, outbound, LLM, and tool execution spans. Task metadata (token counts, delivery status) and policy decisions.
+- **Trace Viewer** - Drill into individual request flows: inbound, outbound, LLM, and tool execution spans. Task metadata (token counts, delivery status) and policy decisions.
 
-- **Memory Dashboard** — Layer stats, observer status, ER1 sync status, expertise tracker, working memory preview.
+- **Memory Dashboard** - Layer stats, observer status, ER1 sync status, expertise tracker, working memory preview.
 
-- **Repository Browser** — File tree, content viewing, Git diff, commit, pull, push, branch checkout, PR creation via `gh`.
+- **Repository Browser** - File tree, content viewing, Git diff, commit, pull, push, branch checkout, PR creation via `gh`.
 
-- **Web Chat** — Send messages from the browser. Supports web user management and WhatsApp JID linking.
+- **Web Chat** - Send messages from the browser. Supports web user management and WhatsApp JID linking.
 
-- **Settings Panel** — Runtime settings including silent mode. Changes take effect immediately.
+- **Settings Panel** - Runtime settings including silent mode. Changes take effect immediately.
 
 ### Electron App
 
@@ -361,18 +468,18 @@ KafClaw uses `whatsmeow` for native Go WhatsApp connectivity. No Node.js bridge 
 
 ### Setup Flow
 
-1. `kafclaw whatsapp-setup` — Enable and configure
-2. `kafclaw gateway` — Start the daemon
+1. `kafclaw whatsapp-setup` - Enable and configure
+2. `kafclaw gateway` - Start the daemon
 3. Scan QR code at `~/.kafclaw/whatsapp-qr.png` with WhatsApp (Settings > Linked Devices)
-4. Session persists in `~/.kafclaw/whatsapp.db` — auto-reconnects on restart
+4. Session persists in `~/.kafclaw/whatsapp.db` - auto-reconnects on restart
 
 ### Authorization Model
 
 Three-tier JID system (default-deny):
 
-- **Allowlist** — Authorized to interact. Messages processed normally.
-- **Denylist** — Explicitly blocked. Messages silently dropped.
-- **Pending** — Unknown senders held until admin approves/denies.
+- **Allowlist** - Authorized to interact. Messages processed normally.
+- **Denylist** - Explicitly blocked. Messages silently dropped.
+- **Pending** - Unknown senders held until admin approves/denies.
 
 ### Silent Mode
 
@@ -420,6 +527,7 @@ Known limits:
 ## 6. Memory System
 
 > See also: [Timeline Architecture](/architecture-security/architecture-timeline/) for the full memory architecture
+> Visual: [Memory Architecture and Notes](/agent-concepts/memory-notes/)
 
 ### Overview
 
@@ -427,21 +535,21 @@ The 6-layer memory system initializes automatically when the LLM provider suppor
 
 ### Agent Tools
 
-**`remember`** — Store information in long-term memory.
+**`remember`** - Store information in long-term memory.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `content` | string | Yes | Information to remember |
 | `tags` | string | No | Comma-separated tags |
 
-**`recall`** — Search memory for relevant information.
+**`recall`** - Search memory for relevant information.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `query` | string | Yes | Search query |
 | `limit` | integer | No | Max results (default: 5) |
 
-**`update_working_memory`** — Update the per-user scratchpad.
+**`update_working_memory`** - Update the per-user scratchpad.
 
 ### RAG Context Injection
 
@@ -477,12 +585,12 @@ Built-in daily task management. Commands work via any channel (CLI, WhatsApp, We
 
 | Command | Description |
 |---------|-------------|
-| `dtu [text]` | Update — add task or enter capture mode |
-| `dtp [text]` | Progress — log progress or enter capture mode |
-| `dts` | Summarize — consolidate today's tasks |
-| `dtn` | Next — suggest next task to work on |
-| `dta` | All — list all open tasks as prioritized plan |
-| `dtc` | Close — submit buffered content from capture mode |
+| `dtu [text]` | Update - add task or enter capture mode |
+| `dtp [text]` | Progress - log progress or enter capture mode |
+| `dts` | Summarize - consolidate today's tasks |
+| `dtn` | Next - suggest next task to work on |
+| `dta` | All - list all open tasks as prioritized plan |
+| `dtc` | Close - submit buffered content from capture mode |
 
 ### Capture Mode
 
@@ -511,7 +619,7 @@ Format: `- [ ]` for open, `- [x]` for completed. Includes progress log, consolid
 
 ### Workspace Structure
 
-Default: `~/.kafclaw/workspace/` — the agent's state home.
+Default: `~/.kafclaw/workspace/` - the agent's state home.
 
 ### Bootstrap Files
 
@@ -530,10 +638,10 @@ Loaded at startup and assembled into the system prompt:
 The agent's exclusive write target. Default: `~/.kafclaw/work-repo/`.
 
 Artifact directories:
-- `memory/` — Memory files (MEMORY.md, daily notes)
-- Specification docs — Behavior specifications
-- `tasks/` — Plans and milestones
-- `docs/` — Explanations and summaries
+- `memory/` - Memory files (MEMORY.md, daily notes)
+- Specification docs - Behavior specifications
+- `tasks/` - Plans and milestones
+- `docs/` - Explanations and summaries
 
 ### Skills
 

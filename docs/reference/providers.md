@@ -94,10 +94,10 @@ This installs the provider CLI if absent, then delegates to its auth flow. Crede
 
 When KafClaw needs an LLM provider, it resolves in this order:
 
-1. **Per-agent model** (`agents.list[].model.primary`) — highest priority
-2. **Task-type routing** (`model.taskRouting[category]`) — if no per-agent model is set
-3. **Global model** (`model.name`) — default fallback
-4. **Legacy OpenAI** (`providers.openai`) — backward compatibility
+1. **Per-agent model** (`agents.list[].model.primary`) - highest priority
+2. **Task-type routing** (`model.taskRouting[category]`) - if no per-agent model is set
+3. **Global model** (`model.name`) - default fallback
+4. **Legacy OpenAI** (`providers.openai`) - backward compatibility
 
 ### Per-Agent Configuration
 

@@ -37,15 +37,15 @@ KafClaw is a Go-based agent runtime with three practical deployment modes:
 ## Memory Management
 
 - [Memory Management](./memory-management/)
-- [Memory Notes](./agent-concepts/memory-notes/)
+- [Memory Architecture and Notes](./agent-concepts/memory-notes/)
 - [Timeline and Memory Architecture](./architecture-security/architecture-timeline/)
 - [Knowledge Contracts](./reference/knowledge-contracts/)
 - [Memory Governance Operations](./memory-management/memory-governance-operations/)
 
-## Collaboration
+## Communication and Channels
 
-- [Collaboration](./collaboration/)
-- [Group and Kafka Operations](./collaboration/group-kafka-operations/)
+- [Communication and Channels](./collaboration/)
+- [Group and Kafka Communication Operations](./collaboration/group-kafka-operations/)
 - [Integrations](./integrations/)
 - [Slack and Teams Bridge](./integrations/slack-teams-bridge/)
 

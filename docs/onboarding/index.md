@@ -11,7 +11,7 @@ Human-centered onboarding flows: first setup, channel onboarding, and early vali
 1. [Getting Started Guide](/start-here/getting-started/)
 2. `kafclaw doctor` then `kafclaw doctor --fix`
 3. `kafclaw configure` for runtime/profile and embedding defaults
-4. [WhatsApp Onboarding — Buddy Access](/integrations/whatsapp-onboarding/)
+4. [WhatsApp Onboarding - Buddy Access](/integrations/whatsapp-onboarding/)
 5. [WhatsApp Setup (Default Deny)](/integrations/whatsapp-setup/)
 
 ## Validation

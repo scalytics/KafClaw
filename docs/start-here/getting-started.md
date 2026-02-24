@@ -169,24 +169,24 @@ Run:
 
 Then choose your LLM provider:
 
-**API key providers** — prompts for API key, sets model and base URL automatically:
-- `claude` — Anthropic Claude (default model: `claude/claude-sonnet-4-5`)
-- `openai` — OpenAI (default model: `openai/gpt-4o`)
-- `gemini` — Google Gemini via API key (default model: `gemini/gemini-2.5-pro`)
-- `xai` — xAI/Grok (default model: `xai/grok-3`)
-- `openrouter` — OpenRouter (default model: `openrouter/anthropic/claude-sonnet-4-5`)
-- `deepseek` — DeepSeek (default model: `deepseek/deepseek-chat`)
-- `groq` — Groq (default model: `groq/llama-3.3-70b-versatile`)
-- `scalytics-copilot` — Scalytics Copilot (prompts for base URL)
+**API key providers** - prompts for API key, sets model and base URL automatically:
+- `claude` - Anthropic Claude (default model: `claude/claude-sonnet-4-5`)
+- `openai` - OpenAI (default model: `openai/gpt-4o`)
+- `gemini` - Google Gemini via API key (default model: `gemini/gemini-2.5-pro`)
+- `xai` - xAI/Grok (default model: `xai/grok-3`)
+- `openrouter` - OpenRouter (default model: `openrouter/anthropic/claude-sonnet-4-5`)
+- `deepseek` - DeepSeek (default model: `deepseek/deepseek-chat`)
+- `groq` - Groq (default model: `groq/llama-3.3-70b-versatile`)
+- `scalytics-copilot` - Scalytics Copilot (prompts for base URL)
 
-**OAuth providers** — delegates to CLI auth flow:
-- `gemini-cli` — Google Gemini via CLI OAuth
-- `openai-codex` — OpenAI Codex via CLI OAuth
+**OAuth providers** - delegates to CLI auth flow:
+- `gemini-cli` - Google Gemini via CLI OAuth
+- `openai-codex` - OpenAI Codex via CLI OAuth
 
 **Generic / Legacy:**
-- `cli-token` — prompts for API token, defaults to OpenRouter base
-- `openai-compatible` — prompts for API base and token (Ollama/vLLM/self-hosted)
-- `skip` — keeps current provider settings
+- `cli-token` - prompts for API token, defaults to OpenRouter base
+- `openai-compatible` - prompts for API base and token (Ollama/vLLM/self-hosted)
+- `skip` - keeps current provider settings
 
 ### Post-Onboarding Provider Management
 

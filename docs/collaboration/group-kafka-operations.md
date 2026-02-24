@@ -1,12 +1,12 @@
 ---
-title: Group and Kafka Operations
-parent: Collaboration
+title: Group and Kafka Communication Operations
+parent: Communication and Channels
 nav_order: 1
 ---
 
-# Group and Kafka Operations
+# Group and Kafka Communication Operations
 
-Core runbook for distributed KafClaw collaboration.
+Core runbook for distributed KafClaw communication.
 
 ## Group Lifecycle
 

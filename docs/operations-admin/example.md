@@ -1,9 +1,9 @@
 ---
 parent: Operations and Admin
-title: Example Deployment — 4-Agent Group
+title: Example Deployment - 4-Agent Group
 ---
 
-# Example Deployment — 4-Agent Group
+# Example Deployment - 4-Agent Group
 
 Deploy a KafClaw Workshop: 1 desktop Electron agent (Mac) + 3 headless Docker agents sharing one gateway and one KafScale bus.
 
@@ -57,7 +57,7 @@ This is the same architecture as the production KafScale platform, but with a lo
 ```bash
 cd KafClaw
 
-# Interactive setup — creates .env, builds image, starts stack
+# Interactive setup - creates .env, builds image, starts stack
 make workshop-setup
 
 # Or manual steps:
@@ -157,18 +157,18 @@ make workshop-ps     # Container status
 2. **etcd** stores KafScale broker metadata and service discovery.
 3. **KafScale broker** provides Kafka-compatible messaging. All agents produce via LFS Proxy HTTP API and consume directly from the broker.
 4. **KafScale LFS Proxy** bridges HTTP produce requests to the broker and handles large file storage in S3.
-5. **Headless agents** run `kafclaw gateway` in Docker with `MIKROBOT_GATEWAY_HOST=0.0.0.0`. Their ports are not exposed to the host — they communicate only via KafScale.
+5. **Headless agents** run `kafclaw gateway` in Docker with `MIKROBOT_GATEWAY_HOST=0.0.0.0`. Their ports are not exposed to the host - they communicate only via KafScale.
 6. **The desktop agent** exposes ports 18790 (API) and 18791 (dashboard) and owns the WhatsApp channel.
 7. On startup, each agent auto-scaffolds its workspace (soul files) if missing, and auto-joins the group specified in its config.
 
 ## Verification
 
 1. Check all containers are running: `make workshop-ps`
-2. MinIO console at `http://localhost:9001` (minioadmin/minioadmin) — verify `kafscale` bucket exists
-3. KafScale console at `http://localhost:3080` (kafscaleadmin/kafscale) — verify broker is healthy
+2. MinIO console at `http://localhost:9001` (minioadmin/minioadmin) - verify `kafscale` bucket exists
+3. KafScale console at `http://localhost:3080` (kafscaleadmin/kafscale) - verify broker is healthy
 4. Check agent logs for group join: `make workshop-logs`
-5. Open KafClaw dashboard at `http://localhost:18791` — group roster should show 4 agents
-6. Send a message via the dashboard — it should be delegated to a headless agent
+5. Open KafClaw dashboard at `http://localhost:18791` - group roster should show 4 agents
+6. Send a message via the dashboard - it should be delegated to a headless agent
 
 ## Troubleshooting
 
