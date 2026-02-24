@@ -201,6 +201,90 @@ func TestDoctorGenerateGatewayToken(t *testing.T) {
 	}
 }
 
+func TestDoctorFailsWhenMemoryEmbeddingMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := `{
+	  "memory": {"embedding": {"enabled": false, "provider": "disabled", "model": "", "dimension": 0}}
+	}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	report, err := RunDoctor()
+	if err != nil {
+		t.Fatalf("run doctor: %v", err)
+	}
+	if !report.HasFailures() {
+		t.Fatalf("expected failure when memory embedding is missing, got %#v", report.Checks)
+	}
+	var found bool
+	for _, c := range report.Checks {
+		if c.Name == "memory_embedding_configured" && c.Status == DoctorFail {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected memory_embedding_configured failure check, got %#v", report.Checks)
+	}
+}
+
+func TestDoctorFixRepairsMissingMemoryEmbedding(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfg := `{
+	  "memory": {"embedding": {"enabled": false, "provider": "disabled", "model": "", "dimension": 0}}
+	}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	report, err := RunDoctorWithOptions(DoctorOptions{Fix: true})
+	if err != nil {
+		t.Fatalf("run doctor --fix: %v", err)
+	}
+	if report.HasFailures() {
+		t.Fatalf("expected no failures after doctor --fix embedding remediation, got %#v", report.Checks)
+	}
+	var fixPass bool
+	for _, c := range report.Checks {
+		if c.Name == "memory_embedding_fix" && c.Status == DoctorPass {
+			fixPass = true
+			break
+		}
+	}
+	if !fixPass {
+		t.Fatalf("expected memory_embedding_fix pass check, got %#v", report.Checks)
+	}
+
+	data, err := os.ReadFile(filepath.Join(cfgDir, "config.json"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	raw := string(data)
+	if !strings.Contains(raw, `"provider": "local-hf"`) && !strings.Contains(raw, `"provider":"local-hf"`) {
+		t.Fatalf("expected local-hf provider after fix, got %s", raw)
+	}
+	if !strings.Contains(raw, `"enabled": true`) && !strings.Contains(raw, `"enabled":true`) {
+		t.Fatalf("expected embedding enabled after fix, got %s", raw)
+	}
+}
+
 func TestDoctorReportsSlackTeamsAccountDiagnostics(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfgDir := filepath.Join(tmpDir, ".kafclaw")

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"math"
 	"sort"
+	"strings"
 )
 
 // SQLiteVecStore implements VectorStore using the shared timeline SQLite DB.
@@ -37,7 +38,10 @@ func (s *SQLiteVecStore) Upsert(ctx context.Context, id string, vector []float32
 		source = "user"
 	}
 
-	blob := encodeFloat32s(vector)
+	var blob []byte
+	if len(vector) > 0 {
+		blob = encodeFloat32s(vector)
+	}
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO memory_chunks (id, content, embedding, source, tags)
@@ -51,6 +55,70 @@ func (s *SQLiteVecStore) Upsert(ctx context.Context, id string, vector []float32
 			updated_at = CURRENT_TIMESTAMP
 	`, id, content, blob, source, tags)
 	return err
+}
+
+// UpsertText stores/updates a chunk without requiring an embedding.
+func (s *SQLiteVecStore) UpsertText(ctx context.Context, id string, payload map[string]interface{}) error {
+	content, _ := payload["content"].(string)
+	source, _ := payload["source"].(string)
+	tags, _ := payload["tags"].(string)
+	if source == "" {
+		source = "user"
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO memory_chunks (id, content, embedding, source, tags)
+		VALUES (?, ?, NULL, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			content = excluded.content,
+			source = excluded.source,
+			tags = excluded.tags,
+			version = memory_chunks.version + 1,
+			updated_at = CURRENT_TIMESTAMP
+	`, id, content, source, tags)
+	return err
+}
+
+// SearchText performs a simple lexical fallback search over chunk content.
+func (s *SQLiteVecStore) SearchText(ctx context.Context, query string, limit int) ([]Result, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+
+	pattern := "%" + strings.ToLower(query) + "%"
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, content, source, tags
+		FROM memory_chunks
+		WHERE LOWER(content) LIKE ?
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`, pattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Result
+	for rows.Next() {
+		var id, content, source, tags string
+		if err := rows.Scan(&id, &content, &source, &tags); err != nil {
+			continue
+		}
+		out = append(out, Result{
+			ID:    id,
+			Score: 1, // lexical fallback; deterministic non-zero score
+			Payload: map[string]interface{}{
+				"content": content,
+				"source":  source,
+				"tags":    tags,
+			},
+		})
+	}
+	return out, nil
 }
 
 // Search finds the top-k most similar chunks by cosine similarity.

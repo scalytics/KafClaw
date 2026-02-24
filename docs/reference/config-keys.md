@@ -61,6 +61,38 @@ kafclaw status
 kafclaw doctor
 ```
 
+## Memory Embedding Configuration
+
+`memory.embedding` is treated as required for semantic memory operation.
+
+```json
+{
+  "memory": {
+    "embedding": {
+      "enabled": true,
+      "provider": "local-hf",
+      "model": "BAAI/bge-small-en-v1.5",
+      "dimension": 384,
+      "normalize": true
+    }
+  }
+}
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `memory.embedding.enabled` | bool | Must be `true` for normal memory mode |
+| `memory.embedding.provider` | string | Embedding backend (`local-hf`, `openai`, etc.) |
+| `memory.embedding.model` | string | Embedding model identifier |
+| `memory.embedding.dimension` | int | Embedding vector dimension (`> 0`) |
+| `memory.embedding.normalize` | bool | Apply vector normalization |
+
+Safety behavior:
+- Adding a first embedding later does not wipe existing text-only memory rows.
+- Switching an already-used embedding fingerprint requires `--confirm-memory-wipe`; without it, `configure` aborts.
+- When confirmed, `configure` wipes `memory_chunks` before saving the new embedding config.
+- `kafclaw doctor --fix` restores default embedding settings if missing/disabled.
+
 ## Model Configuration
 
 ```json

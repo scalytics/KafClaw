@@ -40,5 +40,10 @@ Detailed command examples:
 - [Manage KafClaw](/operations-admin/manage-kafclaw/)
 - [Models CLI Reference](/reference/models-cli/) - provider management, auth, usage stats
 
+Memory safety flags:
+- `kafclaw doctor --fix` repairs missing memory embedding defaults.
+- `kafclaw configure --memory-embedding-enabled-set --memory-embedding-enabled=true --memory-embedding-provider local-hf --memory-embedding-model BAAI/bge-small-en-v1.5 --memory-embedding-dimension 384`
+- `kafclaw configure --memory-embedding-model <new-model> --confirm-memory-wipe` when switching an already-used embedding.
+
 Skills execution example:
 - `kafclaw skills exec <skill-id> --input '{"text":"..."}'`

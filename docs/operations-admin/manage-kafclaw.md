@@ -252,6 +252,7 @@ Highlights include:
 
 `doctor` returns non-zero when failing checks exist.
 When skills are enabled, doctor also checks `node`, `clawhub` (if external installs are enabled), runtime dir permissions, and channel-onboarding readiness.
+Doctor also enforces memory embedding readiness (`memory.embedding` enabled with provider/model/dimension). If missing, `doctor --fix` applies defaults.
 Use `kafclaw security` for consolidated security posture and deep skill audits.
 
 ## 6. Config Management
@@ -274,7 +275,14 @@ Use `kafclaw security` for consolidated security posture and deep skill audits.
 ./kafclaw configure --non-interactive --skills-scope selected
 ./kafclaw configure --non-interactive --enable-skill github --disable-skill weather
 ./kafclaw configure --non-interactive --kafka-brokers "broker1:9092,broker2:9092" --kafka-security-protocol SASL_SSL --kafka-sasl-mechanism SCRAM-SHA-512 --kafka-sasl-username "<username>" --kafka-sasl-password "<password>" --kafka-tls-ca-file "/path/to/ca.pem"
+./kafclaw configure --non-interactive --memory-embedding-enabled-set --memory-embedding-enabled=true --memory-embedding-provider local-hf --memory-embedding-model BAAI/bge-small-en-v1.5 --memory-embedding-dimension 384
+./kafclaw configure --non-interactive --memory-embedding-model BAAI/bge-base-en-v1.5 --confirm-memory-wipe
 ```
+
+Memory embedding switch policy:
+- Configure blocks a switch when embedded memory already exists unless `--confirm-memory-wipe` is provided.
+- First-time embedding enable (from disabled to configured) does not wipe existing text-only memory rows.
+- On confirmed switch, `memory_chunks` is wiped so old vectors do not mix with new embedding space.
 
 Skills policy defaults:
 

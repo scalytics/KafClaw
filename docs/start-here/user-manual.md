@@ -231,6 +231,8 @@ kafclaw doctor --generate-gateway-token
 ```
 
 Includes Slack/Teams account configuration diagnostics checks.
+Also validates memory embedding configuration. If missing/disabled, `doctor` fails and
+`kafclaw doctor --fix` applies default embedding settings.
 
 ### 3.7 `config`
 
@@ -250,7 +252,14 @@ kafclaw configure
 kafclaw configure --subagents-allow-agents agent-main,agent-research --non-interactive
 kafclaw configure --clear-subagents-allow-agents --non-interactive
 kafclaw configure --non-interactive --kafka-brokers "broker1:9092,broker2:9092" --kafka-security-protocol SASL_SSL --kafka-sasl-mechanism SCRAM-SHA-512 --kafka-sasl-username "<username>" --kafka-sasl-password "<password>" --kafka-tls-ca-file "/path/to/ca.pem"
+kafclaw configure --non-interactive --memory-embedding-enabled-set --memory-embedding-enabled=true --memory-embedding-provider local-hf --memory-embedding-model BAAI/bge-small-en-v1.5 --memory-embedding-dimension 384
+kafclaw configure --non-interactive --memory-embedding-model BAAI/bge-base-en-v1.5 --confirm-memory-wipe
 ```
+
+Memory embedding safety rules:
+- Embedding config is mandatory in normal mode (`configure` rejects disabling/empty provider/model/dimension).
+- First-time embedding enable does not wipe existing text-only memory rows.
+- Switching an already-used embedding requires `--confirm-memory-wipe`; then memory chunks are wiped before saving.
 
 ### 3.9 `kshark`
 
