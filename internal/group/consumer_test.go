@@ -5,12 +5,33 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/KafClaw/KafClaw/internal/bus"
 	"github.com/KafClaw/KafClaw/internal/config"
 )
+
+type fakeKnowledgeHandler struct {
+	mu    sync.Mutex
+	calls int
+	last  string
+}
+
+func (f *fakeKnowledgeHandler) Process(topic string, _ []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	f.last = topic
+	return nil
+}
+
+func (f *fakeKnowledgeHandler) Snapshot() (int, string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls, f.last
+}
 
 func TestGroupRouter_RouteAnnounce(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -212,5 +233,42 @@ func TestChannelConsumer(t *testing.T) {
 	}
 	if string(msg.Value) != "hello" {
 		t.Errorf("expected value hello, got %s", string(msg.Value))
+	}
+}
+
+func TestGroupRouter_RouteKnowledgeTopic(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(LFSEnvelope{KfsLFS: 1})
+	}))
+	defer server.Close()
+
+	cfg := config.GroupConfig{Enabled: true, GroupName: "test", LFSProxyURL: server.URL}
+	mgr := NewManager(cfg, nil, AgentIdentity{AgentID: "local-agent"})
+	msgBus := bus.NewMessageBus()
+	consumer := NewChannelConsumer()
+	router := NewGroupRouter(mgr, msgBus, consumer)
+
+	fh := &fakeKnowledgeHandler{}
+	kTopic := "group.test.knowledge.proposals"
+	router.SetKnowledgeHandler(fh, []string{kTopic})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = router.Run(ctx) }()
+	time.Sleep(10 * time.Millisecond)
+
+	consumer.Send(ConsumerMessage{
+		Topic: kTopic,
+		Value: []byte(`{"schemaVersion":"v1","type":"proposal","traceId":"t1","timestamp":"2026-02-24T00:00:00Z","idempotencyKey":"i1","clawId":"remote","instanceId":"n1","payload":{"proposalId":"p1","group":"g","statement":"s"}}`),
+	})
+	time.Sleep(50 * time.Millisecond)
+
+	calls, last := fh.Snapshot()
+	if calls != 1 {
+		t.Fatalf("expected knowledge handler call count 1, got %d", calls)
+	}
+	if last != kTopic {
+		t.Fatalf("expected knowledge handler topic %s, got %s", kTopic, last)
 	}
 }

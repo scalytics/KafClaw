@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,35 +39,49 @@ type GroupTracePublisher interface {
 
 var subagentRetryInterval = 8 * time.Second
 
+const (
+	defaultMemoryInjectionBudgetChars = 3600
+	defaultMemoryLaneTopK             = 5
+	defaultMemoryMinScore             = 0.30
+	maxMemoryLaneTopK                 = 20
+	workingMemorySectionCapChars      = 1200
+	observationsSectionCapChars       = 1200
+	ragSectionCapChars                = 1200
+	subagentParentContextMsgLimit     = 8
+	subagentParentContextCharLimit    = 1800
+	subagentHandoffCharLimit          = 2400
+)
+
 // LoopOptions contains configuration for the agent loop.
 type LoopOptions struct {
-	Bus                   *bus.MessageBus
-	Provider              provider.LLMProvider
-	Timeline              *timeline.TimelineService
-	Policy                policy.Engine
-	MemoryService         *memory.MemoryService
-	AutoIndexer           *memory.AutoIndexer
-	ExpertiseTracker      *memory.ExpertiseTracker
-	WorkingMemory         *memory.WorkingMemoryStore
-	Observer              *memory.Observer
-	GroupPublisher        GroupTracePublisher
-	Workspace             string
-	WorkRepo              string
-	SystemRepo            string
-	WorkRepoGetter        func() string
-	Model                 string
-	MaxIterations         int
-	MaxSubagentSpawnDepth int
-	MaxSubagentChildren   int
-	MaxSubagentConcurrent int
-	SubagentArchiveAfter  int
-	AgentID               string
-	SubagentAllowAgents   []string
-	SubagentModel         string
-	SubagentThinking      string
-	SubagentToolsAllow    []string
-	SubagentToolsDeny     []string
-	Config                *config.Config // for middleware chain setup
+	Bus                     *bus.MessageBus
+	Provider                provider.LLMProvider
+	Timeline                *timeline.TimelineService
+	Policy                  policy.Engine
+	MemoryService           *memory.MemoryService
+	AutoIndexer             *memory.AutoIndexer
+	ExpertiseTracker        *memory.ExpertiseTracker
+	WorkingMemory           *memory.WorkingMemoryStore
+	Observer                *memory.Observer
+	GroupPublisher          GroupTracePublisher
+	Workspace               string
+	WorkRepo                string
+	SystemRepo              string
+	WorkRepoGetter          func() string
+	Model                   string
+	MaxIterations           int
+	MaxSubagentSpawnDepth   int
+	MaxSubagentChildren     int
+	MaxSubagentConcurrent   int
+	SubagentArchiveAfter    int
+	AgentID                 string
+	SubagentAllowAgents     []string
+	SubagentModel           string
+	SubagentThinking        string
+	SubagentMemoryShareMode string
+	SubagentToolsAllow      []string
+	SubagentToolsDeny       []string
+	Config                  *config.Config // for middleware chain setup
 }
 
 // Loop is the core agent processing engine.
@@ -95,24 +110,25 @@ type Loop struct {
 	// activeTaskID tracks the current task being processed (for token accounting).
 	activeTaskID string
 	// activeSender tracks the sender of the current message (for policy checks).
-	activeSender      string
-	activeChannel     string
-	activeChatID      string
-	activeThreadID    string
-	activeTraceID     string
-	activeMessageType string
-	chain             *middleware.Chain
-	cfg               *config.Config
-	subagents         *subagentManager
-	agentID           string
-	subagentAllowList []string
-	subagentModel     string
-	subagentThinking  string
-	subagentTools     subagentToolPolicy
-	announceMu        sync.Mutex
-	announceSent      map[string]time.Time
-	retryWorkerMu     sync.Mutex
-	retryWorkerOn     bool
+	activeSender            string
+	activeChannel           string
+	activeChatID            string
+	activeThreadID          string
+	activeTraceID           string
+	activeMessageType       string
+	chain                   *middleware.Chain
+	cfg                     *config.Config
+	subagents               *subagentManager
+	agentID                 string
+	subagentAllowList       []string
+	subagentModel           string
+	subagentThinking        string
+	subagentMemoryShareMode string
+	subagentTools           subagentToolPolicy
+	announceMu              sync.Mutex
+	announceSent            map[string]time.Time
+	retryWorkerMu           sync.Mutex
+	retryWorkerOn           bool
 }
 
 // NewLoop creates a new agent loop.
@@ -168,8 +184,9 @@ func NewLoop(opts LoopOptions) *Loop {
 			}
 			return out
 		}(),
-		subagentModel:    strings.TrimSpace(opts.SubagentModel),
-		subagentThinking: strings.TrimSpace(opts.SubagentThinking),
+		subagentModel:           strings.TrimSpace(opts.SubagentModel),
+		subagentThinking:        strings.TrimSpace(opts.SubagentThinking),
+		subagentMemoryShareMode: normalizeSubagentMemoryShareMode(opts.SubagentMemoryShareMode),
 		subagentTools: subagentToolPolicy{
 			Allow: append([]string{}, opts.SubagentToolsAllow...),
 			Deny:  append([]string{}, opts.SubagentToolsDeny...),
@@ -387,14 +404,16 @@ func (l *Loop) ProcessDirectWithTrace(ctx context.Context, content, sessionKey, 
 	// Build messages using the context builder
 	messages := l.contextBuilder.BuildMessages(sess, content, channel, chatID, l.activeMessageType)
 
+	remainingMemoryBudget := l.memoryInjectionBudgetChars()
+
 	// Inject working memory (scoped per user/thread)
-	messages = l.injectWorkingMemory(messages, chatID, sessionKey)
+	messages, remainingMemoryBudget = l.injectWorkingMemory(messages, chatID, sessionKey, remainingMemoryBudget)
 
 	// Inject observations (compressed session history)
-	messages = l.injectObservations(messages, sessionKey)
+	messages, remainingMemoryBudget = l.injectObservations(messages, sessionKey, remainingMemoryBudget)
 
 	// Inject RAG context from semantic memory
-	messages = l.injectRAGContext(ctx, messages, content)
+	messages, _ = l.injectRAGContext(ctx, messages, content, remainingMemoryBudget)
 
 	// Run the agentic loop
 	response, err := l.runAgentLoop(ctx, messages)
@@ -969,27 +988,28 @@ func (l *Loop) systemRepoPath() string {
 // injectRAGContext searches semantic memory for relevant context and appends
 // it to the system prompt. Returns messages unchanged if memoryService is nil
 // or search returns no relevant results.
-func (l *Loop) injectRAGContext(ctx context.Context, messages []provider.Message, userQuery string) []provider.Message {
+func (l *Loop) injectRAGContext(ctx context.Context, messages []provider.Message, userQuery string, budgetChars int) ([]provider.Message, int) {
 	if l.memoryService == nil || len(messages) == 0 {
-		return messages
+		return messages, budgetChars
 	}
 
-	chunks, err := l.memoryService.Search(ctx, userQuery, 5)
+	chunks, err := l.memoryService.Search(ctx, userQuery, l.memoryLaneTopK())
 	if err != nil {
 		slog.Warn("RAG search failed", "error", err)
-		return messages
+		return messages, budgetChars
 	}
 
 	// Filter out low-relevance results
 	var relevant []memory.MemoryChunk
+	minScore := l.memoryMinScore()
 	for _, c := range chunks {
-		if c.Score >= 0.3 {
+		if c.Score >= minScore {
 			relevant = append(relevant, c)
 		}
 	}
 
 	if len(relevant) == 0 {
-		return messages
+		return messages, budgetChars
 	}
 
 	// Build the memory section
@@ -999,25 +1019,29 @@ func (l *Loop) injectRAGContext(ctx context.Context, messages []provider.Message
 		sb.WriteString(fmt.Sprintf("- [source=%s, relevance=%.0f%%] %s\n", c.Source, c.Score*100, c.Content))
 	}
 
-	// Append to system prompt (first message)
-	messages[0].Content += sb.String()
-	return messages
+	section := sb.String()
+	truncated := sectionWouldOverflow(section, ragSectionCapChars, budgetChars)
+	updated, remaining := appendSectionWithBudget(messages, section, ragSectionCapChars, budgetChars)
+	if truncated {
+		l.recordMemoryOverflow("rag")
+	}
+	return updated, remaining
 }
 
 // injectWorkingMemory loads scoped working memory and appends it to the system prompt.
-func (l *Loop) injectWorkingMemory(messages []provider.Message, resourceID, threadID string) []provider.Message {
+func (l *Loop) injectWorkingMemory(messages []provider.Message, resourceID, threadID string, budgetChars int) ([]provider.Message, int) {
 	if l.workingMemory == nil || len(messages) == 0 {
-		return messages
+		return messages, budgetChars
 	}
 
 	resContent, thrContent, err := l.workingMemory.LoadBoth(resourceID, threadID)
 	if err != nil {
 		slog.Warn("Working memory load failed", "error", err)
-		return messages
+		return messages, budgetChars
 	}
 
 	if resContent == "" && thrContent == "" {
-		return messages
+		return messages, budgetChars
 	}
 
 	var sb strings.Builder
@@ -1034,29 +1058,169 @@ func (l *Loop) injectWorkingMemory(messages []provider.Message, resourceID, thre
 		sb.WriteString("\n")
 	}
 
-	messages[0].Content += sb.String()
-	return messages
+	section := sb.String()
+	truncated := sectionWouldOverflow(section, workingMemorySectionCapChars, budgetChars)
+	updated, remaining := appendSectionWithBudget(messages, section, workingMemorySectionCapChars, budgetChars)
+	if truncated {
+		l.recordMemoryOverflow("working")
+	}
+	return updated, remaining
 }
 
 // injectObservations loads compressed observation notes and appends them to the system prompt.
-func (l *Loop) injectObservations(messages []provider.Message, sessionID string) []provider.Message {
+func (l *Loop) injectObservations(messages []provider.Message, sessionID string, budgetChars int) ([]provider.Message, int) {
 	if l.observer == nil || len(messages) == 0 {
-		return messages
+		return messages, budgetChars
 	}
 
 	observations, err := l.observer.LoadObservations(sessionID)
 	if err != nil {
 		slog.Warn("Observations load failed", "error", err)
-		return messages
+		return messages, budgetChars
 	}
+	observations = trimTailObservations(observations, l.memoryLaneTopK())
 
 	formatted := memory.FormatObservations(observations)
 	if formatted == "" {
-		return messages
+		return messages, budgetChars
 	}
 
-	messages[0].Content += "\n\n---\n\n" + formatted
-	return messages
+	section := "\n\n---\n\n" + formatted
+	truncated := sectionWouldOverflow(section, observationsSectionCapChars, budgetChars)
+	updated, remaining := appendSectionWithBudget(messages, section, observationsSectionCapChars, budgetChars)
+	if truncated {
+		l.recordMemoryOverflow("observation")
+	}
+	return updated, remaining
+}
+
+func (l *Loop) memoryInjectionBudgetChars() int {
+	if l == nil || l.cfg == nil {
+		return defaultMemoryInjectionBudgetChars
+	}
+	// Keep proportional budget from retrieval count while bounded.
+	k := l.memoryLaneTopK()
+	budget := k * 700
+	if budget < 1200 {
+		budget = 1200
+	}
+	if budget > defaultMemoryInjectionBudgetChars {
+		budget = defaultMemoryInjectionBudgetChars
+	}
+	return budget
+}
+
+func (l *Loop) memoryLaneTopK() int {
+	if l == nil || l.cfg == nil || l.cfg.Memory.Search.MaxResults <= 0 {
+		return defaultMemoryLaneTopK
+	}
+	k := l.cfg.Memory.Search.MaxResults
+	if k > maxMemoryLaneTopK {
+		return maxMemoryLaneTopK
+	}
+	return k
+}
+
+func (l *Loop) memoryMinScore() float32 {
+	if l == nil || l.cfg == nil {
+		return defaultMemoryMinScore
+	}
+	score := l.cfg.Memory.Search.MinScore
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return float32(score)
+}
+
+func appendSectionWithBudget(messages []provider.Message, section string, sectionCapChars, budgetChars int) ([]provider.Message, int) {
+	if len(messages) == 0 || section == "" || budgetChars <= 0 {
+		return messages, budgetChars
+	}
+	capChars := sectionCapChars
+	if capChars <= 0 || capChars > budgetChars {
+		capChars = budgetChars
+	}
+	section = truncateWithEllipsis(section, capChars)
+	messages[0].Content += section
+	remaining := budgetChars - len(section)
+	return messages, remaining
+}
+
+func sectionWouldOverflow(section string, sectionCapChars, budgetChars int) bool {
+	if section == "" {
+		return false
+	}
+	if budgetChars <= 0 {
+		return true
+	}
+	capChars := sectionCapChars
+	if capChars <= 0 || capChars > budgetChars {
+		capChars = budgetChars
+	}
+	return len(section) > capChars
+}
+
+func (l *Loop) recordMemoryOverflow(lane string) {
+	if l == nil || l.timeline == nil {
+		return
+	}
+	lane = strings.TrimSpace(strings.ToLower(lane))
+	if lane == "" {
+		lane = "unknown"
+	}
+	incrementSettingCounter(l.timeline, "memory_overflow_events_total")
+	incrementSettingCounter(l.timeline, "memory_overflow_events_"+lane)
+
+	if l.activeTraceID != "" {
+		_ = l.timeline.AddEvent(&timeline.TimelineEvent{
+			EventID:        fmt.Sprintf("MEMORY_OVERFLOW_%d", time.Now().UnixNano()),
+			TraceID:        l.activeTraceID,
+			Timestamp:      time.Now(),
+			SenderID:       "system",
+			SenderName:     "KafClaw",
+			EventType:      "SYSTEM",
+			ContentText:    fmt.Sprintf("memory context section truncated due to budget (lane=%s)", lane),
+			Classification: "MEMORY_CONTEXT_OVERFLOW",
+			Authorized:     true,
+			Metadata:       fmt.Sprintf(`{"lane":"%s"}`, lane),
+		})
+	}
+}
+
+func incrementSettingCounter(timeSvc *timeline.TimelineService, key string) {
+	if timeSvc == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	next := 1
+	if raw, err := timeSvc.GetSetting(key); err == nil {
+		if n, convErr := strconv.Atoi(strings.TrimSpace(raw)); convErr == nil && n >= 0 {
+			next = n + 1
+		}
+	}
+	_ = timeSvc.SetSetting(key, strconv.Itoa(next))
+}
+
+func truncateWithEllipsis(s string, maxChars int) string {
+	if maxChars <= 0 {
+		return ""
+	}
+	if len(s) <= maxChars {
+		return s
+	}
+	if maxChars <= 3 {
+		return s[:maxChars]
+	}
+	return s[:maxChars-3] + "..."
+}
+
+func trimTailObservations(observations []memory.Observation, max int) []memory.Observation {
+	if max <= 0 || len(observations) <= max {
+		return observations
+	}
+	return observations[len(observations)-max:]
 }
 
 func (l *Loop) processMessage(ctx context.Context, msg *bus.InboundMessage) (response string, taskID string, err error) {
@@ -1739,33 +1903,37 @@ func (l *Loop) spawnSubagentFromTool(ctx context.Context, req tools.SpawnRequest
 	}
 	childTrace = fmt.Sprintf("%s:%s", childTrace, run.RunID)
 
-	go func(runID, childSessionKey, task, selectedModel, thinking string) {
+	go func(runID, childSessionKey, parentSession, task, selectedModel, thinking string) {
 		l.subagents.markRunning(runID)
 
 		childLoop := NewLoop(LoopOptions{
-			Provider:              l.provider,
-			Timeline:              l.timeline,
-			Policy:                l.subagentPolicy(),
-			MemoryService:         l.memoryService,
-			AutoIndexer:           l.autoIndexer,
-			ExpertiseTracker:      l.expertiseTracker,
-			WorkingMemory:         l.workingMemory,
-			Observer:              l.observer,
-			GroupPublisher:        l.groupPublisher,
-			Workspace:             l.workspace,
-			WorkRepo:              l.workRepo,
-			SystemRepo:            l.systemRepo,
-			WorkRepoGetter:        l.workRepoGetter,
-			Model:                 selectedModel,
-			MaxIterations:         l.maxIterations,
-			MaxSubagentSpawnDepth: l.subagents.limits.MaxSpawnDepth,
-			MaxSubagentChildren:   l.subagents.limits.MaxChildrenPerAgent,
-			MaxSubagentConcurrent: l.subagents.limits.MaxConcurrent,
-			SubagentModel:         l.subagentModel,
-			SubagentThinking:      l.subagentThinking,
-			SubagentToolsAllow:    append([]string{}, l.subagentTools.Allow...),
-			SubagentToolsDeny:     append([]string{}, l.subagentTools.Deny...),
+			Provider:                l.provider,
+			Timeline:                l.timeline,
+			Policy:                  l.subagentPolicy(),
+			MemoryService:           l.memoryService,
+			AutoIndexer:             l.autoIndexer,
+			ExpertiseTracker:        l.expertiseTracker,
+			WorkingMemory:           l.workingMemory,
+			Observer:                l.observer,
+			GroupPublisher:          l.groupPublisher,
+			Workspace:               l.workspace,
+			WorkRepo:                l.workRepo,
+			SystemRepo:              l.systemRepo,
+			WorkRepoGetter:          l.workRepoGetter,
+			Model:                   selectedModel,
+			MaxIterations:           l.maxIterations,
+			MaxSubagentSpawnDepth:   l.subagents.limits.MaxSpawnDepth,
+			MaxSubagentChildren:     l.subagents.limits.MaxChildrenPerAgent,
+			MaxSubagentConcurrent:   l.subagents.limits.MaxConcurrent,
+			SubagentModel:           l.subagentModel,
+			SubagentThinking:        l.subagentThinking,
+			SubagentMemoryShareMode: l.subagentMemoryShareMode,
+			SubagentToolsAllow:      append([]string{}, l.subagentTools.Allow...),
+			SubagentToolsDeny:       append([]string{}, l.subagentTools.Deny...),
 		})
+		if l.subagentMemoryShareMode == "inherit-readonly" {
+			l.seedChildReadonlyParentContext(childLoop, parentSession, childSessionKey)
+		}
 
 		response, runErr := childLoop.ProcessDirectWithTrace(childCtx, task, childSessionKey, childTrace)
 		status := "completed"
@@ -1784,6 +1952,9 @@ func (l *Loop) spawnSubagentFromTool(ctx context.Context, req tools.SpawnRequest
 		}
 		l.subagents.markCompletionOutput(runID, truncateStr(announceOutput, 1200))
 		l.subagents.markFinished(runID, status, runErr)
+		if l.shouldSubagentHandoffToParent() {
+			l.appendSubagentHandoffToParent(parentSession, runID, status, response, runErr)
+		}
 
 		if persisted, ok := l.subagents.getRun(runID); ok {
 			_ = l.publishSubagentAnnounceWithRetry(
@@ -1797,7 +1968,7 @@ func (l *Loop) spawnSubagentFromTool(ctx context.Context, req tools.SpawnRequest
 				parentTraceID,
 			)
 		}
-	}(run.RunID, run.ChildSessionKey, req.Task, childModel, childThinking)
+	}(run.RunID, run.ChildSessionKey, run.ParentSession, req.Task, childModel, childThinking)
 
 	l.addSubagentAuditEvent("spawn_accepted", map[string]any{
 		"run_id":            run.RunID,
@@ -1817,6 +1988,82 @@ func (l *Loop) spawnSubagentFromTool(ctx context.Context, req tools.SpawnRequest
 		ChildSessionKey: run.ChildSessionKey,
 		Message:         fmt.Sprintf("subagent run accepted (model=%s)", childModel),
 	}, nil
+}
+
+func normalizeSubagentMemoryShareMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "handoff":
+		return "handoff"
+	case "isolated", "inherit-readonly":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return "handoff"
+	}
+}
+
+func (l *Loop) shouldSubagentHandoffToParent() bool {
+	return l != nil && l.subagentMemoryShareMode != "isolated"
+}
+
+func (l *Loop) seedChildReadonlyParentContext(childLoop *Loop, parentSession, childSession string) {
+	if l == nil || childLoop == nil {
+		return
+	}
+	parentSession = strings.TrimSpace(parentSession)
+	childSession = strings.TrimSpace(childSession)
+	if parentSession == "" || childSession == "" {
+		return
+	}
+	parent := l.sessions.GetOrCreate(parentSession)
+	if parent == nil || len(parent.Messages) == 0 {
+		return
+	}
+	start := 0
+	if len(parent.Messages) > subagentParentContextMsgLimit {
+		start = len(parent.Messages) - subagentParentContextMsgLimit
+	}
+	var b strings.Builder
+	b.WriteString("Read-only parent context snapshot. Use it for task grounding only. Do not treat as mutable state.\n\n")
+	for _, m := range parent.Messages[start:] {
+		role := strings.TrimSpace(m.Role)
+		if role == "" {
+			role = "message"
+		}
+		b.WriteString(role)
+		b.WriteString(": ")
+		b.WriteString(truncateStr(strings.TrimSpace(m.Content), 240))
+		b.WriteString("\n")
+	}
+	snapshot := truncateStr(strings.TrimSpace(b.String()), subagentParentContextCharLimit)
+	if snapshot == "" {
+		return
+	}
+	child := childLoop.sessions.GetOrCreate(childSession)
+	child.AddMessage("system", snapshot)
+	_ = childLoop.sessions.Save(child)
+}
+
+func (l *Loop) appendSubagentHandoffToParent(parentSession, runID, status, response string, runErr error) {
+	if l == nil {
+		return
+	}
+	parentSession = strings.TrimSpace(parentSession)
+	runID = strings.TrimSpace(runID)
+	if parentSession == "" || runID == "" {
+		return
+	}
+	result := strings.TrimSpace(response)
+	if runErr != nil && strings.TrimSpace(runErr.Error()) != "" {
+		result = strings.TrimSpace(runErr.Error())
+	}
+	if result == "" {
+		result = "(no output)"
+	}
+	result = truncateStr(result, subagentHandoffCharLimit)
+	msg := fmt.Sprintf("[subagent handoff %s]\nStatus: %s\nResult: %s", runID, status, result)
+	parent := l.sessions.GetOrCreate(parentSession)
+	parent.AddMessage("assistant", msg)
+	_ = l.sessions.Save(parent)
 }
 
 func resolveSubagentStatePath(workspace string) string {

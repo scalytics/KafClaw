@@ -160,7 +160,7 @@ For release-binary install flows (`--latest`, `--version`, `--list-releases`, un
 
 ### LAN / Remote Access
 
-By default, KafClaw binds to `127.0.0.1` — only reachable from the local machine. This is an intentional security default.
+By default, KafClaw binds to `127.0.0.1` - only reachable from the local machine. This is an intentional security default.
 
 To make the gateway accessible from other machines on your LAN (e.g., Jetson Nano serving a home network):
 
@@ -310,6 +310,8 @@ SQLite with WAL mode, foreign keys, 5-second busy timeout.
 | `group_traces` | Shared traces |
 | `group_memory_items` | Shared memory |
 | `group_skill_channels` | Skill registry |
+| `knowledge_idempotency` | Dedup ledger for knowledge envelopes (`idempotency_key`, `claw_id`, `instance_id`) |
+| `knowledge_facts` | Latest accepted shared fact state with versioned conflict policy |
 
 ### Key Settings
 
@@ -322,6 +324,8 @@ SQLite with WAL mode, foreign keys, 5-second busy timeout.
 | `silent_mode` | Suppress outbound WhatsApp (default: true) |
 | `bot_repo_path` | System/identity repo path |
 | `work_repo_path` | Active work repo path |
+| `runtime_reconcile_*` | Startup reconciliation counters for pending deliveries/open tasks |
+| `group_heartbeat_*` | Last heartbeat timestamps + sequence continuity |
 
 ---
 
@@ -369,7 +373,7 @@ Delivery worker polls every 5 seconds, retries up to 5 times with exponential ba
 
 ## 7. API Reference
 
-### Port 18790 — API Server
+### Port 18790 - API Server
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -381,7 +385,7 @@ Auth note:
 - For Slack/Teams/WhatsApp provider users: auth is enforced through provider bridge + channel access controls (not manual gateway bearer tokens).
 - Direct clients obtain this token out-of-band from the operator; the API does not issue tokens.
 
-### Port 18791 — Dashboard API
+### Port 18791 - Dashboard API
 
 **Status and Auth:**
 
@@ -406,9 +410,14 @@ Auth note:
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/memory/status` | Layer stats, observer, ER1, expertise |
+| GET | `/api/v1/memory/metrics` | Memory/knowledge SLO metrics (precision/recall proxies, overflow, stale/conflict) |
 | POST | `/api/v1/memory/reset` | Reset layer or all |
 | POST | `/api/v1/memory/config` | Update memory settings |
 | POST | `/api/v1/memory/prune` | Trigger lifecycle pruning |
+| GET | `/api/v1/memory/embedding/status` | Embedding runtime/config status + index/install metadata |
+| GET | `/api/v1/memory/embedding/healthz` | Embedding runtime readiness probe |
+| POST | `/api/v1/memory/embedding/install` | Queue local embedding model install/bootstrap |
+| POST | `/api/v1/memory/embedding/reindex` | Wipe and rebuild embedding index (`confirmWipe=true` required) |
 
 **Settings and Repo:**
 
@@ -471,7 +480,7 @@ Auth note:
 | GET | `/api/v1/approvals/pending` | Pending approvals |
 | POST | `/api/v1/approvals/{id}` | Approve/deny |
 
-### Port 18888 — channel bridge sidecar
+### Port 18888 - channel bridge sidecar
 
 | Method | Path | Description |
 |--------|------|-------------|

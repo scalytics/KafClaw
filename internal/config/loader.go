@@ -16,6 +16,7 @@ type subagentFieldPresence struct {
 	MaxSpawnDepth       bool
 	MaxChildrenPerAgent bool
 	ArchiveAfterMinutes bool
+	MemoryShareMode     bool
 	AllowAgents         bool
 	Model               bool
 	Thinking            bool
@@ -190,6 +191,12 @@ func Load() (*Config, error) {
 	envconfig.Process("MIKROBOT_CHANNELS_SLACK", &cfg.Channels.Slack)
 	envconfig.Process("MIKROBOT_CHANNELS_MSTEAMS", &cfg.Channels.MSTeams)
 	envconfig.Process("MIKROBOT_GATEWAY", &cfg.Gateway)
+	envconfig.Process("MIKROBOT_NODE", &cfg.Node)
+	envconfig.Process("MIKROBOT_MEMORY_EMBEDDING", &cfg.Memory.Embedding)
+	envconfig.Process("MIKROBOT_MEMORY_SEARCH", &cfg.Memory.Search)
+	envconfig.Process("MIKROBOT_KNOWLEDGE", &cfg.Knowledge)
+	envconfig.Process("MIKROBOT_KNOWLEDGE_TOPICS", &cfg.Knowledge.Topics)
+	envconfig.Process("MIKROBOT_KNOWLEDGE_VOTING", &cfg.Knowledge.Voting)
 	envconfig.Process("MIKROBOT_TOOLS_EXEC", &cfg.Tools.Exec)
 	envconfig.Process("MIKROBOT_TOOLS_WEB_SEARCH", &cfg.Tools.Web.Search)
 	envconfig.Process("MIKROBOT_TOOLS_SUBAGENTS", &cfg.Tools.Subagents)
@@ -220,6 +227,12 @@ func Load() (*Config, error) {
 	envconfig.Process("KAFCLAW_CHANNELS_SLACK", &cfg.Channels.Slack)
 	envconfig.Process("KAFCLAW_CHANNELS_MSTEAMS", &cfg.Channels.MSTeams)
 	envconfig.Process("KAFCLAW_GATEWAY", &cfg.Gateway)
+	envconfig.Process("KAFCLAW_NODE", &cfg.Node)
+	envconfig.Process("KAFCLAW_MEMORY_EMBEDDING", &cfg.Memory.Embedding)
+	envconfig.Process("KAFCLAW_MEMORY_SEARCH", &cfg.Memory.Search)
+	envconfig.Process("KAFCLAW_KNOWLEDGE", &cfg.Knowledge)
+	envconfig.Process("KAFCLAW_KNOWLEDGE_TOPICS", &cfg.Knowledge.Topics)
+	envconfig.Process("KAFCLAW_KNOWLEDGE_VOTING", &cfg.Knowledge.Voting)
 	envconfig.Process("KAFCLAW_TOOLS_EXEC", &cfg.Tools.Exec)
 	envconfig.Process("KAFCLAW_TOOLS_WEB_SEARCH", &cfg.Tools.Web.Search)
 	envconfig.Process("KAFCLAW_TOOLS_SUBAGENTS", &cfg.Tools.Subagents)
@@ -265,6 +278,7 @@ func Load() (*Config, error) {
 	expandHome(&cfg.Paths.Workspace)
 	expandHome(&cfg.Paths.WorkRepoPath)
 	expandHome(&cfg.Paths.SystemRepoPath)
+	expandHome(&cfg.Memory.Embedding.CacheDir)
 
 	mergeAgentsSubagentDefaults(cfg, toolsPresence)
 
@@ -279,6 +293,14 @@ func Load() (*Config, error) {
 	}
 	if cfg.Tools.Subagents.ArchiveAfterMinutes <= 0 {
 		cfg.Tools.Subagents.ArchiveAfterMinutes = 60
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Tools.Subagents.MemoryShareMode)) {
+	case "", "handoff":
+		cfg.Tools.Subagents.MemoryShareMode = "handoff"
+	case "isolated", "inherit-readonly":
+		cfg.Tools.Subagents.MemoryShareMode = strings.ToLower(strings.TrimSpace(cfg.Tools.Subagents.MemoryShareMode))
+	default:
+		cfg.Tools.Subagents.MemoryShareMode = "handoff"
 	}
 
 	if cfg.Skills.NodeManager == "" {
@@ -329,6 +351,8 @@ func Load() (*Config, error) {
 		cfg.Channels.MSTeams.GroupPolicy = GroupPolicyAllowlist
 	}
 
+	normalizeMemoryKnowledgeConfig(cfg)
+
 	cleanEmptyAgents(cfg)
 
 	// Resolve workspace path with backward compatibility:
@@ -352,6 +376,130 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+func normalizeMemoryKnowledgeConfig(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	if strings.TrimSpace(cfg.Node.ClawID) == "" {
+		cfg.Node.ClawID = "claw-local"
+	}
+	if strings.TrimSpace(cfg.Node.InstanceID) == "" {
+		cfg.Node.InstanceID = "default"
+	}
+	if strings.TrimSpace(cfg.Node.DisplayName) == "" {
+		cfg.Node.DisplayName = "KafClaw Local"
+	}
+
+	if !cfg.Memory.Embedding.Enabled || strings.EqualFold(strings.TrimSpace(cfg.Memory.Embedding.Provider), "disabled") {
+		cfg.Memory.Embedding.Enabled = false
+		cfg.Memory.Embedding.Provider = "disabled"
+	} else {
+		switch strings.ToLower(strings.TrimSpace(cfg.Memory.Embedding.Provider)) {
+		case "", "local-hf":
+			cfg.Memory.Embedding.Provider = "local-hf"
+		case "openai":
+			cfg.Memory.Embedding.Provider = "openai"
+		default:
+			cfg.Memory.Embedding.Provider = "local-hf"
+		}
+		if strings.TrimSpace(cfg.Memory.Embedding.Model) == "" {
+			cfg.Memory.Embedding.Model = DefaultConfig().Memory.Embedding.Model
+		}
+		if cfg.Memory.Embedding.Dimension <= 0 {
+			cfg.Memory.Embedding.Dimension = DefaultConfig().Memory.Embedding.Dimension
+		}
+		if cfg.Memory.Embedding.StartupTimeoutSec <= 0 {
+			cfg.Memory.Embedding.StartupTimeoutSec = DefaultConfig().Memory.Embedding.StartupTimeoutSec
+		}
+	}
+	if strings.TrimSpace(cfg.Memory.Embedding.CacheDir) == "" {
+		cfg.Memory.Embedding.CacheDir = DefaultConfig().Memory.Embedding.CacheDir
+	}
+	if strings.TrimSpace(cfg.Memory.Embedding.Endpoint) == "" {
+		cfg.Memory.Embedding.Endpoint = DefaultConfig().Memory.Embedding.Endpoint
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Memory.Search.Mode)) {
+	case "", "hybrid":
+		cfg.Memory.Search.Mode = "hybrid"
+	case "semantic", "keyword":
+		cfg.Memory.Search.Mode = strings.ToLower(strings.TrimSpace(cfg.Memory.Search.Mode))
+	default:
+		cfg.Memory.Search.Mode = "hybrid"
+	}
+	if cfg.Memory.Search.MaxResults <= 0 {
+		cfg.Memory.Search.MaxResults = DefaultConfig().Memory.Search.MaxResults
+	}
+	if cfg.Memory.Search.MinScore < 0 {
+		cfg.Memory.Search.MinScore = 0
+	}
+	if cfg.Memory.Search.MinScore > 1 {
+		cfg.Memory.Search.MinScore = 1
+	}
+
+	if strings.TrimSpace(cfg.Knowledge.Group) == "" {
+		if strings.TrimSpace(cfg.Group.GroupName) != "" {
+			cfg.Knowledge.Group = strings.TrimSpace(cfg.Group.GroupName)
+		} else {
+			cfg.Knowledge.Group = DefaultConfig().Knowledge.Group
+		}
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Knowledge.ShareMode)) {
+	case "", "proposal":
+		cfg.Knowledge.ShareMode = "proposal"
+	case "direct":
+		cfg.Knowledge.ShareMode = "direct"
+	default:
+		cfg.Knowledge.ShareMode = "proposal"
+	}
+
+	if cfg.Knowledge.Voting.MinPoolSize < 1 {
+		cfg.Knowledge.Voting.MinPoolSize = DefaultConfig().Knowledge.Voting.MinPoolSize
+	}
+	if cfg.Knowledge.Voting.QuorumYes < 1 {
+		cfg.Knowledge.Voting.QuorumYes = DefaultConfig().Knowledge.Voting.QuorumYes
+	}
+	if cfg.Knowledge.Voting.QuorumNo < 1 {
+		cfg.Knowledge.Voting.QuorumNo = DefaultConfig().Knowledge.Voting.QuorumNo
+	}
+	if cfg.Knowledge.Voting.TimeoutSec <= 0 {
+		cfg.Knowledge.Voting.TimeoutSec = DefaultConfig().Knowledge.Voting.TimeoutSec
+	}
+
+	if len(cfg.Knowledge.Publish.DenyTags) == 0 {
+		cfg.Knowledge.Publish.DenyTags = append([]string{}, DefaultConfig().Knowledge.Publish.DenyTags...)
+	}
+	if len(cfg.Knowledge.Publish.AllowTags) == 0 {
+		cfg.Knowledge.Publish.AllowTags = append([]string{}, DefaultConfig().Knowledge.Publish.AllowTags...)
+	}
+
+	knowledgeGroup := strings.TrimSpace(cfg.Knowledge.Group)
+	defTopics := DefaultConfig().Knowledge.Topics
+	topicsAtDefault := cfg.Knowledge.Topics == defTopics
+	if topicsAtDefault && knowledgeGroup != DefaultConfig().Knowledge.Group {
+		cfg.Knowledge.Topics = KnowledgeTopicsConfig{}
+	}
+	if strings.TrimSpace(cfg.Knowledge.Topics.Capabilities) == "" {
+		cfg.Knowledge.Topics.Capabilities = fmt.Sprintf("group.%s.knowledge.capabilities", knowledgeGroup)
+	}
+	if strings.TrimSpace(cfg.Knowledge.Topics.Presence) == "" {
+		cfg.Knowledge.Topics.Presence = fmt.Sprintf("group.%s.knowledge.presence", knowledgeGroup)
+	}
+	if strings.TrimSpace(cfg.Knowledge.Topics.Proposals) == "" {
+		cfg.Knowledge.Topics.Proposals = fmt.Sprintf("group.%s.knowledge.proposals", knowledgeGroup)
+	}
+	if strings.TrimSpace(cfg.Knowledge.Topics.Votes) == "" {
+		cfg.Knowledge.Topics.Votes = fmt.Sprintf("group.%s.knowledge.votes", knowledgeGroup)
+	}
+	if strings.TrimSpace(cfg.Knowledge.Topics.Decisions) == "" {
+		cfg.Knowledge.Topics.Decisions = fmt.Sprintf("group.%s.knowledge.decisions", knowledgeGroup)
+	}
+	if strings.TrimSpace(cfg.Knowledge.Topics.Facts) == "" {
+		cfg.Knowledge.Topics.Facts = fmt.Sprintf("group.%s.knowledge.facts", knowledgeGroup)
+	}
+}
+
 func mergeAgentsSubagentDefaults(cfg *Config, toolsPresence subagentFieldPresence) {
 	if cfg == nil || cfg.Agents == nil {
 		return
@@ -370,6 +518,9 @@ func mergeAgentsSubagentDefaults(cfg *Config, toolsPresence subagentFieldPresenc
 	}
 	if !toolsPresence.ArchiveAfterMinutes && dst.ArchiveAfterMinutes == def.ArchiveAfterMinutes && src.ArchiveAfterMinutes > 0 {
 		dst.ArchiveAfterMinutes = src.ArchiveAfterMinutes
+	}
+	if !toolsPresence.MemoryShareMode && strings.TrimSpace(dst.MemoryShareMode) == strings.TrimSpace(def.MemoryShareMode) && strings.TrimSpace(src.MemoryShareMode) != "" {
+		dst.MemoryShareMode = src.MemoryShareMode
 	}
 	if !toolsPresence.Model && strings.TrimSpace(dst.Model) == "" && strings.TrimSpace(src.Model) != "" {
 		dst.Model = src.Model
@@ -393,6 +544,7 @@ func isZeroSubagentsToolConfig(c SubagentsToolConfig) bool {
 		c.MaxSpawnDepth == 0 &&
 		c.MaxChildrenPerAgent == 0 &&
 		c.ArchiveAfterMinutes == 0 &&
+		strings.TrimSpace(c.MemoryShareMode) == "" &&
 		strings.TrimSpace(c.Model) == "" &&
 		strings.TrimSpace(c.Thinking) == "" &&
 		len(c.AllowAgents) == 0 &&
@@ -430,6 +582,7 @@ func readSubagentPresence(node map[string]any) subagentFieldPresence {
 	_, p.MaxSpawnDepth = node["maxSpawnDepth"]
 	_, p.MaxChildrenPerAgent = node["maxChildrenPerAgent"]
 	_, p.ArchiveAfterMinutes = node["archiveAfterMinutes"]
+	_, p.MemoryShareMode = node["memoryShareMode"]
 	_, p.AllowAgents = node["allowAgents"]
 	_, p.Model = node["model"]
 	_, p.Thinking = node["thinking"]

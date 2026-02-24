@@ -11,12 +11,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/KafClaw/KafClaw/internal/config"
 	"github.com/KafClaw/KafClaw/internal/group"
 	"github.com/KafClaw/KafClaw/internal/orchestrator"
+	"github.com/KafClaw/KafClaw/internal/timeline"
 )
 
 func TestGatewayHelperFunctions(t *testing.T) {
@@ -90,6 +92,214 @@ func TestGatewayHelperFunctions(t *testing.T) {
 	}
 	if inferTopicCategory("team.random") != "control" {
 		t.Fatal("expected control fallback")
+	}
+}
+
+func TestCollectKnowledgeTopics(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Knowledge.Enabled = true
+	cfg.Knowledge.Topics.Proposals = "group.g.knowledge.proposals"
+	cfg.Knowledge.Topics.Votes = "group.g.knowledge.votes"
+	cfg.Knowledge.Topics.Decisions = "group.g.knowledge.decisions"
+	cfg.Knowledge.Topics.Facts = "group.g.knowledge.facts"
+	cfg.Knowledge.Topics.Presence = "group.g.knowledge.presence"
+	cfg.Knowledge.Topics.Capabilities = "group.g.knowledge.capabilities"
+
+	topics := collectKnowledgeTopics(cfg)
+	if len(topics) != 6 {
+		t.Fatalf("expected 6 knowledge topics, got %d (%v)", len(topics), topics)
+	}
+
+	cfg.Knowledge.Topics.Facts = cfg.Knowledge.Topics.Proposals
+	topics = collectKnowledgeTopics(cfg)
+	if len(topics) != 5 {
+		t.Fatalf("expected deduped topics length 5, got %d (%v)", len(topics), topics)
+	}
+}
+
+func TestProbeEmbeddingRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Memory.Embedding.Enabled = false
+	health := probeEmbeddingRuntime(cfg)
+	if health.Ready {
+		t.Fatalf("expected unhealthy when embedding disabled: %+v", health)
+	}
+
+	cfg = config.DefaultConfig()
+	cfg.Memory.Embedding.Provider = "openai"
+	cfg.Memory.Embedding.Model = "text-embedding-3-small"
+	cfg.Memory.Embedding.Dimension = 1536
+	health = probeEmbeddingRuntime(cfg)
+	if !health.Ready || health.Status != "ok" {
+		t.Fatalf("expected ready for non-local provider: %+v", health)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg = config.DefaultConfig()
+	cfg.Memory.Embedding.Provider = "local-hf"
+	cfg.Memory.Embedding.Endpoint = srv.URL
+	health = probeEmbeddingRuntime(cfg)
+	if !health.Ready || health.HTTPStatus != http.StatusOK {
+		t.Fatalf("expected local runtime healthy probe, got %+v", health)
+	}
+}
+
+func TestEmbeddingCachePresent(t *testing.T) {
+	if embeddingCachePresent("") {
+		t.Fatal("empty cache dir should be false")
+	}
+	if embeddingCachePresent(filepath.Join(t.TempDir(), "missing")) {
+		t.Fatal("missing cache dir should be false")
+	}
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if !embeddingCachePresent(cacheDir) {
+		t.Fatal("expected existing cache dir to be detected")
+	}
+}
+
+func TestPublishKnowledgePresenceAndCapabilitiesAnnouncement(t *testing.T) {
+	var mu sync.Mutex
+	topics := make([]string, 0, 2)
+	types := make([]string, 0, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/lfs/produce" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		topic := r.Header.Get("X-Kafka-Topic")
+		var env map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&env); err == nil {
+			mu.Lock()
+			topics = append(topics, topic)
+			if tv, ok := env["type"].(string); ok {
+				types = append(types, tv)
+			}
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kfs_lfs":1}`))
+	}))
+	defer srv.Close()
+
+	tl, err := timeline.NewTimelineService(filepath.Join(t.TempDir(), "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Group.LFSProxyURL = srv.URL
+	cfg.Knowledge.Enabled = true
+	cfg.Knowledge.Group = "g1"
+	cfg.Node.ClawID = "claw-a"
+	cfg.Node.InstanceID = "inst-a"
+	cfg.Knowledge.Topics.Presence = "group.g1.knowledge.presence"
+	cfg.Knowledge.Topics.Capabilities = "group.g1.knowledge.capabilities"
+
+	if err := publishKnowledgeCapabilitiesAnnouncement(cfg, tl); err != nil {
+		t.Fatalf("publish capabilities: %v", err)
+	}
+	if err := publishKnowledgePresenceAnnouncement(cfg, tl, "active"); err != nil {
+		t.Fatalf("publish presence: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(topics) != 2 {
+		t.Fatalf("expected 2 published envelopes, got %d (%v)", len(topics), topics)
+	}
+	if !strings.Contains(strings.Join(types, ","), "capabilities") || !strings.Contains(strings.Join(types, ","), "presence") {
+		t.Fatalf("expected capabilities and presence types, got %v", types)
+	}
+}
+
+func TestInferNodeCapabilities(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Knowledge.Voting.Enabled = true
+	cfg.Tools.Subagents.MaxConcurrent = 3
+	cfg.Channels.Slack.Enabled = true
+	cfg.Channels.MSTeams.Enabled = true
+	cfg.Channels.WhatsApp.Enabled = true
+
+	caps := inferNodeCapabilities(cfg)
+	joined := strings.Join(caps, ",")
+	for _, expected := range []string{"memory.search", "memory.semantic", "knowledge.governance", "knowledge.vote", "subagents", "channel.slack", "channel.msteams", "channel.whatsapp"} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected capability %q in %v", expected, caps)
+		}
+	}
+}
+
+func TestCollectMemoryKnowledgeMetrics(t *testing.T) {
+	tl, err := timeline.NewTimelineService(filepath.Join(t.TempDir(), "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+
+	if err := tl.SetSetting("memory_overflow_events_total", "3"); err != nil {
+		t.Fatalf("set overflow setting: %v", err)
+	}
+	_, _ = tl.DB().Exec(`INSERT INTO memory_chunks (content, source) VALUES ('a','s')`)
+	_, _ = tl.DB().Exec(`INSERT INTO memory_chunks (content, source, embedding) VALUES ('b','s',x'00000000')`)
+
+	_ = tl.AddEvent(&timeline.TimelineEvent{EventID: "E1", Timestamp: time.Now(), SenderID: "s", SenderName: "n", EventType: "SYSTEM", ContentText: "x", Classification: "KNOWLEDGE_FACT_ACCEPTED", Authorized: true})
+	_ = tl.AddEvent(&timeline.TimelineEvent{EventID: "E2", Timestamp: time.Now(), SenderID: "s", SenderName: "n", EventType: "SYSTEM", ContentText: "x", Classification: "KNOWLEDGE_FACT_STALE", Authorized: true})
+	_ = tl.AddEvent(&timeline.TimelineEvent{EventID: "E3", Timestamp: time.Now(), SenderID: "s", SenderName: "n", EventType: "SYSTEM", ContentText: "x", Classification: "KNOWLEDGE_FACT_CONFLICT", Authorized: true})
+
+	_ = tl.CreateKnowledgeProposal(&timeline.KnowledgeProposalRecord{
+		ProposalID:         "p1",
+		GroupName:          "g1",
+		Statement:          "s1",
+		Tags:               "[]",
+		ProposerClawID:     "c1",
+		ProposerInstanceID: "i1",
+		Status:             "approved",
+	})
+	_ = tl.CreateKnowledgeProposal(&timeline.KnowledgeProposalRecord{
+		ProposalID:         "p2",
+		GroupName:          "g1",
+		Statement:          "s2",
+		Tags:               "[]",
+		ProposerClawID:     "c2",
+		ProposerInstanceID: "i2",
+		Status:             "rejected",
+	})
+	_ = tl.UpsertKnowledgeFactLatest(&timeline.KnowledgeFactRecord{
+		FactID:    "f1",
+		GroupName: "g1",
+		Subject:   "svc",
+		Predicate: "runbook",
+		Object:    "v2",
+		Version:   1,
+		Source:    "decision:p1",
+		Tags:      "[]",
+	})
+
+	got, err := collectMemoryKnowledgeMetrics(tl)
+	if err != nil {
+		t.Fatalf("collect metrics: %v", err)
+	}
+	if got["status"] != "ok" {
+		t.Fatalf("expected status ok, got %#v", got["status"])
+	}
+	mem, ok := got["memory"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing memory metrics: %#v", got)
+	}
+	if mem["overflowEvents"] != 3 {
+		t.Fatalf("expected overflowEvents=3, got %#v", mem["overflowEvents"])
 	}
 }
 

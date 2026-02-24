@@ -1,9 +1,9 @@
 ---
 parent: Architecture and Security
-title: KafClaw System Architecture — Detailed Reference
+title: KafClaw System Architecture - Detailed Reference
 ---
 
-# KafClaw System Architecture — Detailed Reference
+# KafClaw System Architecture - Detailed Reference
 
 > For the quick overview, see [Architecture Overview](/architecture-security/architecture/).
 
@@ -84,10 +84,10 @@ flowchart LR
 
 ### Design Principles
 
-- **Message bus decoupling** — Channels never call the agent directly
-- **Graceful degradation** — Memory, group, orchestrator, ER1 are all optional
-- **Secure defaults** — Binds 127.0.0.1, tier-restricted tools, deny-pattern filtering
-- **Single SQLite database** — All persistent state in `~/.kafclaw/timeline.db`
+- **Message bus decoupling** - Channels never call the agent directly
+- **Graceful degradation** - Memory, group, orchestrator, ER1 are all optional
+- **Secure defaults** - Binds 127.0.0.1, tier-restricted tools, deny-pattern filtering
+- **Single SQLite database** - All persistent state in `~/.kafclaw/timeline.db`
 
 ---
 
@@ -268,7 +268,7 @@ Post-Processing
 
 ## 5. Package Architecture
 
-### 5.1 internal/agent — Core Loop
+### 5.1 internal/agent - Core Loop
 
 **Files:** `loop.go`, `context.go`, `delivery.go`
 
@@ -294,14 +294,14 @@ type LoopOptions struct {
 ```
 
 **ContextBuilder** assembles the system prompt:
-- `BuildSystemPrompt()` — Identity + bootstrap files + skills
-- `BuildMessages()` — Constructs message list with history
-- `AssessTask()` — Lightweight classification (security/creative/architecture/bug-fix/quick-answer)
-- `BuildIdentityEnvelope()` — AgentIdentity for group collaboration
+- `BuildSystemPrompt()` - Identity + bootstrap files + skills
+- `BuildMessages()` - Constructs message list with history
+- `AssessTask()` - Lightweight classification (security/creative/architecture/bug-fix/quick-answer)
+- `BuildIdentityEnvelope()` - AgentIdentity for group collaboration
 
-**Day2Day Task Manager** — `dtu`, `dtp`, `dts`, `dtn`, `dta`, `dtc` commands for daily task tracking. Stores tasks in workspace markdown with checkbox format.
+**Day2Day Task Manager** - `dtu`, `dtp`, `dts`, `dtn`, `dta`, `dtc` commands for daily task tracking. Stores tasks in workspace markdown with checkbox format.
 
-### 5.2 internal/bus — Message Bus
+### 5.2 internal/bus - Message Bus
 
 Async pub-sub decoupling channels from the agent loop.
 
@@ -317,10 +317,10 @@ type InboundMessage struct {
 ```
 
 - Buffered channels: 100 inbound, 100 outbound
-- `Subscribe(channel, callback)` — channels register for outbound delivery
-- `DispatchOutbound()` — goroutine, fans out to subscribers
+- `Subscribe(channel, callback)` - channels register for outbound delivery
+- `DispatchOutbound()` - goroutine, fans out to subscribers
 
-### 5.3 internal/channels — External Integrations
+### 5.3 internal/channels - External Integrations
 
 ```go
 type Channel interface {
@@ -331,18 +331,18 @@ type Channel interface {
 }
 ```
 
-**WhatsApp** (via whatsmeow — native Go, no Node bridge):
+**WhatsApp** (via whatsmeow - native Go, no Node bridge):
 - Session: `~/.kafclaw/whatsapp.db`
 - JID normalization, audio transcription (Whisper), image handling
 - Config: enabled, allowFrom, dropUnauthorized, ignoreReactions
 
-### 5.4 internal/config — Configuration
+### 5.4 internal/config - Configuration
 
 Loading precedence: `KAFCLAW_*` env vars > `~/.kafclaw/config.json` > defaults.
 
 Runtime settings in SQLite override config for: `work_repo_path`, `bot_repo_path`, `group_name`, `group_active`, `kafscale_lfs_proxy_url`.
 
-### 5.5 internal/provider — LLM Abstraction
+### 5.5 internal/provider - LLM Abstraction
 
 ```go
 type LLMProvider interface {
@@ -357,10 +357,10 @@ type Embedder interface {
 }
 ```
 
-- **OpenAI provider** — Chat + embeddings + TTS. Custom apiBase for OpenRouter/DeepSeek.
-- **LocalWhisper provider** — Wraps OpenAI, runs Whisper binary locally for transcription.
+- **OpenAI provider** - Chat + embeddings + TTS. Custom apiBase for OpenRouter/DeepSeek.
+- **LocalWhisper provider** - Wraps OpenAI, runs Whisper binary locally for transcription.
 
-### 5.6 internal/tools — Tool Registry
+### 5.6 internal/tools - Tool Registry
 
 ```go
 type Tool interface {
@@ -390,7 +390,7 @@ Default tools:
 | `recall` | 1 | Search semantic memory |
 | `update_working_memory` | 1 | Update per-user scratchpad |
 
-### 5.7 internal/policy — Authorization Engine
+### 5.7 internal/policy - Authorization Engine
 
 ```go
 type Engine interface {
@@ -405,7 +405,7 @@ type Decision struct {
 }
 ```
 
-### 5.8 internal/approval — Approval Workflow
+### 5.8 internal/approval - Approval Workflow
 
 Interactive approval gates for high-tier tool calls:
 1. Policy returns `RequiresApproval=true`
@@ -414,7 +414,7 @@ Interactive approval gates for high-tier tool calls:
 4. Waiting goroutine unblocked
 5. Tool execution proceeds or aborts
 
-### 5.9 internal/session — Conversation State
+### 5.9 internal/session - Conversation State
 
 JSONL-based at `~/.kafclaw/sessions/{key}.jsonl`:
 - Line 1: metadata JSON
@@ -422,7 +422,7 @@ JSONL-based at `~/.kafclaw/sessions/{key}.jsonl`:
 
 Thread-safe with in-memory caching.
 
-### 5.10 internal/timeline — SQLite Event Log
+### 5.10 internal/timeline - SQLite Event Log
 
 Central persistence. Schema includes:
 
@@ -434,14 +434,14 @@ Central persistence. Schema includes:
 
 **Orchestrator:** `orchestrator_zones`, `orchestrator_zone_members`, `orchestrator_hierarchy`
 
-### 5.11 internal/scheduler — Job Scheduling
+### 5.11 internal/scheduler - Job Scheduling
 
 Cron-based with distributed file locking:
 - Ticks every `TickInterval` (default 60s)
 - Per-category semaphores: LLM (3), shell (1), default (5)
 - Jobs published to bus as `scheduler:` channel messages
 
-### 5.12 internal/group — Multi-Agent Collaboration
+### 5.12 internal/group - Multi-Agent Collaboration
 
 Kafka-based distributed agent coordination.
 
@@ -453,11 +453,11 @@ Kafka-based distributed agent coordination.
 
 **LFS integration:** Large artifact storage via KafScale LFS proxy (HTTP, SASL/PLAIN auth).
 
-### 5.13 internal/orchestrator — Hierarchy and Zones
+### 5.13 internal/orchestrator - Hierarchy and Zones
 
 Multi-agent hierarchies:
-- `AgentNode` — role, parent_id, zone_id, endpoint, status
-- `Zone` — visibility (private/shared/public), owner, parent
+- `AgentNode` - role, parent_id, zone_id, endpoint, status
+- `Zone` - visibility (private/shared/public), owner, parent
 - Discovery via Kafka topic
 - Stored in `orchestrator_hierarchy` and `orchestrator_zones`
 
@@ -478,15 +478,15 @@ Multi-agent hierarchies:
 
 ### 6.2 Components
 
-- **MemoryService** — Store/Search with auto-embedding. Graceful degradation if no embedder.
-- **SQLiteVecStore** — Embedded vector DB. 1536-dim embeddings as float32 BLOBs. Cosine similarity in Go (<1ms at <10K chunks). Deterministic chunk IDs via SHA-256.
-- **AutoIndexer** — Non-blocking enqueue (100-item buffer), 5-item/30s flush. Skips greetings, short content, raw JSON.
-- **SoulFileIndexer** — Chunks files by `##` headers. Idempotent via deterministic IDs.
-- **Observer** — Message threshold (default 50) triggers LLM compression. Produces HIGH/MEDIUM/LOW observations. Reflector consolidates at max (default 200).
-- **WorkingMemoryStore** — Keyed by (resourceID, threadID). Thread falls back to resource-level.
-- **ER1Client** — Auth via `/user/access`, fetch via `/memory/{ctx_id}`, sync every 5 minutes.
-- **ExpertiseTracker** — Per-skill proficiency: `0.6*successRate + 0.3*avgQuality + 0.1*experienceBonus`.
-- **LifecycleManager** — Daily TTL pruning. Max chunks: 50,000. Manual `Prune()` and `DeleteBySource()`.
+- **MemoryService** - Store/Search with auto-embedding. Graceful degradation if no embedder.
+- **SQLiteVecStore** - Embedded vector DB. 1536-dim embeddings as float32 BLOBs. Cosine similarity in Go (<1ms at <10K chunks). Deterministic chunk IDs via SHA-256.
+- **AutoIndexer** - Non-blocking enqueue (100-item buffer), 5-item/30s flush. Skips greetings, short content, raw JSON.
+- **SoulFileIndexer** - Chunks files by `##` headers. Idempotent via deterministic IDs.
+- **Observer** - Message threshold (default 50) triggers LLM compression. Produces HIGH/MEDIUM/LOW observations. Reflector consolidates at max (default 200).
+- **WorkingMemoryStore** - Keyed by (resourceID, threadID). Thread falls back to resource-level.
+- **ER1Client** - Auth via `/user/access`, fetch via `/memory/{ctx_id}`, sync every 5 minutes.
+- **ExpertiseTracker** - Per-skill proficiency: `0.6*successRate + 0.3*avgQuality + 0.1*experienceBonus`.
+- **LifecycleManager** - Daily TTL pruning. Max chunks: 50,000. Manual `Prune()` and `DeleteBySource()`.
 
 ### 6.3 Context Assembly Order
 
@@ -568,9 +568,9 @@ Renderer (Vue 3 SPA)
 
 ### Header Status Indicators
 
-- **Mode badge** — Current mode (standalone/full/remote)
-- **Memory LED** — Circle indicator (purple=healthy, amber=high, red=critical, gray=unavailable). Polls `/api/v1/memory/status` every 30s.
-- **Sidecar/Connection** — Process status or remote connection status
+- **Mode badge** - Current mode (standalone/full/remote)
+- **Memory LED** - Circle indicator (purple=healthy, amber=high, red=critical, gray=unavailable). Polls `/api/v1/memory/status` every 30s.
+- **Sidecar/Connection** - Process status or remote connection status
 
 ---
 
@@ -620,7 +620,7 @@ Destructive deletion, VCS deletion, disk destruction, device redirection, permis
 
 ### Network Access
 
-By default, KafClaw binds to `127.0.0.1` (localhost only) — this is intentional for security. The gateway is **not reachable from other machines** unless you change the bind address.
+By default, KafClaw binds to `127.0.0.1` (localhost only) - this is intentional for security. The gateway is **not reachable from other machines** unless you change the bind address.
 
 To expose the gateway on your LAN (e.g., running on a Jetson Nano, accessing from a laptop):
 
@@ -629,7 +629,7 @@ export KAFCLAW_GATEWAY_AUTH_TOKEN=mysecrettoken
 make run-headless    # binds 0.0.0.0, dashboard API auth enabled
 ```
 
-Then access from another machine: `http://<server-ip>:18791/` (note: **http**, not https — the gateway serves plain HTTP unless TLS is configured via `tlsCert`/`tlsKey`).
+Then access from another machine: `http://<server-ip>:18791/` (note: **http**, not https - the gateway serves plain HTTP unless TLS is configured via `tlsCert`/`tlsKey`).
 
 You can also bind to a specific LAN IP or override the host manually:
 

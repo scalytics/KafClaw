@@ -27,6 +27,7 @@ import (
 	"github.com/KafClaw/KafClaw/internal/config"
 	"github.com/KafClaw/KafClaw/internal/group"
 	"github.com/KafClaw/KafClaw/internal/identity"
+	"github.com/KafClaw/KafClaw/internal/knowledge"
 	"github.com/KafClaw/KafClaw/internal/memory"
 	"github.com/KafClaw/KafClaw/internal/orchestrator"
 	"github.com/KafClaw/KafClaw/internal/policy"
@@ -68,6 +69,10 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 		fmt.Printf("Config error: %v\n", err)
 		os.Exit(1)
 	}
+	if err := validateEmbeddingHardGate(cfg); err != nil {
+		fmt.Printf("Memory embedding gate failed: %v\n", err)
+		os.Exit(1)
+	}
 	// 2. Setup Timeline (QMD)
 	home, _ := os.UserHomeDir()
 	timelinePath := fmt.Sprintf("%s/.kafclaw/timeline.db", home)
@@ -91,6 +96,9 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 	seedSetting("default_work_repo_path", filepath.Join(home, "KafClaw-Workspace"))
 	seedSetting("default_repo_search_path", home)
 	seedSetting("kafscale_lfs_proxy_url", "http://localhost:8080")
+	if err := reconcileDurableRuntimeState(timeSvc); err != nil {
+		fmt.Printf("⚠️ Runtime reconciliation failed: %v\n", err)
+	}
 
 	// Resolve work repo path (settings override config)
 	workRepoPath := cfg.Paths.WorkRepoPath
@@ -146,14 +154,14 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 	// External users (non-owner) are restricted to read-only tools (tier 0).
 	policyEngine.ExternalMaxTier = 0
 
-	// 4c. Setup Memory System (requires Embedder-capable provider)
+	// 4c. Setup Memory System (uses dedicated embedding resolver, independent from chat provider)
 	var memorySvc *memory.MemoryService
-	if embedder, ok := prov.(provider.Embedder); ok {
+	if embedder, source := resolveMemoryEmbedder(cfg, prov); embedder != nil {
 		vecStore := memory.NewSQLiteVecStore(timeSvc.DB(), 1536)
 		memorySvc = memory.NewMemoryService(vecStore, embedder)
-		fmt.Println("🧠 Memory system initialized")
+		fmt.Println("🧠 Memory system initialized:", source)
 	} else {
-		fmt.Println("ℹ️  Memory system disabled (provider does not support embeddings)")
+		fmt.Println("ℹ️  Memory system disabled (no embedding provider available)")
 	}
 
 	// 4d. Setup Group Collaboration (conditional)
@@ -205,6 +213,9 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 		}
 		kafkaCtx, kafkaCancel := context.WithCancel(parentCtx)
 		extTopics := group.ExtendedTopics(grpCfg.GroupName)
+		knowledgeTopics := collectKnowledgeTopics(cfg)
+		allTopics := extTopics.AllTopics()
+		allTopics = append(allTopics, knowledgeTopics...)
 		consumerGroup := grpCfg.ConsumerGroup
 		if consumerGroup == "" {
 			consumerGroup = grpCfg.AgentID
@@ -223,13 +234,17 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 		kafkaConsumer := group.NewKafkaConsumerWithDialer(
 			grpCfg.KafkaBrokers,
 			consumerGroup,
-			extTopics.AllTopics(),
+			allTopics,
 			dialer,
 		)
 		grpState.SetConsumer(kafkaConsumer)
 		router := group.NewGroupRouter(mgr, msgBus, kafkaConsumer)
 		if orchHandler != nil {
 			router.SetOrchestratorHandler(orchHandler)
+		}
+		if cfg.Knowledge.Enabled && len(knowledgeTopics) > 0 {
+			router.SetKnowledgeHandler(group.NewKnowledgeHandler(timeSvc, cfg.Node.ClawID, cfg.Knowledge.GovernanceEnabled), knowledgeTopics)
+			fmt.Printf("🧠 Knowledge router enabled (%d topic(s))\n", len(knowledgeTopics))
 		}
 		go func() {
 			if err := router.Run(kafkaCtx); err != nil {
@@ -397,33 +412,34 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 
 	// 5b. Setup Loop
 	loop := agent.NewLoop(agent.LoopOptions{
-		Bus:                   msgBus,
-		Provider:              prov,
-		Timeline:              timeSvc,
-		Policy:                policyEngine,
-		MemoryService:         memorySvc,
-		AutoIndexer:           autoIndexer,
-		ExpertiseTracker:      expertiseTracker,
-		WorkingMemory:         workingMemoryStore,
-		Observer:              observer,
-		GroupPublisher:        groupPublisher,
-		Workspace:             cfg.Paths.Workspace,
-		WorkRepo:              workRepoPath,
-		SystemRepo:            systemRepoPath,
-		WorkRepoGetter:        getWorkRepo,
-		Model:                 cfg.Model.Name,
-		MaxIterations:         cfg.Model.MaxToolIterations,
-		MaxSubagentSpawnDepth: cfg.Tools.Subagents.MaxSpawnDepth,
-		MaxSubagentChildren:   cfg.Tools.Subagents.MaxChildrenPerAgent,
-		MaxSubagentConcurrent: cfg.Tools.Subagents.MaxConcurrent,
-		SubagentArchiveAfter:  cfg.Tools.Subagents.ArchiveAfterMinutes,
-		AgentID:               cfg.Group.AgentID,
-		SubagentAllowAgents:   cfg.Tools.Subagents.AllowAgents,
-		SubagentModel:         cfg.Tools.Subagents.Model,
-		SubagentThinking:      cfg.Tools.Subagents.Thinking,
-		SubagentToolsAllow:    cfg.Tools.Subagents.Tools.Allow,
-		SubagentToolsDeny:     cfg.Tools.Subagents.Tools.Deny,
-		Config:                cfg,
+		Bus:                     msgBus,
+		Provider:                prov,
+		Timeline:                timeSvc,
+		Policy:                  policyEngine,
+		MemoryService:           memorySvc,
+		AutoIndexer:             autoIndexer,
+		ExpertiseTracker:        expertiseTracker,
+		WorkingMemory:           workingMemoryStore,
+		Observer:                observer,
+		GroupPublisher:          groupPublisher,
+		Workspace:               cfg.Paths.Workspace,
+		WorkRepo:                workRepoPath,
+		SystemRepo:              systemRepoPath,
+		WorkRepoGetter:          getWorkRepo,
+		Model:                   cfg.Model.Name,
+		MaxIterations:           cfg.Model.MaxToolIterations,
+		MaxSubagentSpawnDepth:   cfg.Tools.Subagents.MaxSpawnDepth,
+		MaxSubagentChildren:     cfg.Tools.Subagents.MaxChildrenPerAgent,
+		MaxSubagentConcurrent:   cfg.Tools.Subagents.MaxConcurrent,
+		SubagentArchiveAfter:    cfg.Tools.Subagents.ArchiveAfterMinutes,
+		AgentID:                 cfg.Group.AgentID,
+		SubagentAllowAgents:     cfg.Tools.Subagents.AllowAgents,
+		SubagentModel:           cfg.Tools.Subagents.Model,
+		SubagentThinking:        cfg.Tools.Subagents.Thinking,
+		SubagentMemoryShareMode: cfg.Tools.Subagents.MemoryShareMode,
+		SubagentToolsAllow:      cfg.Tools.Subagents.Tools.Allow,
+		SubagentToolsDeny:       cfg.Tools.Subagents.Tools.Deny,
+		Config:                  cfg,
 	})
 
 	// 5b. Index soul files (non-blocking background)
@@ -2351,6 +2367,27 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 			})
 		})
 
+		// API: Memory + Knowledge Metrics (GET)
+		mux.HandleFunc("/api/v1/memory/metrics", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			payload, err := collectMemoryKnowledgeMetrics(timeSvc)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(payload)
+		})
+
 		// API: Memory Reset (POST)
 		mux.HandleFunc("/api/v1/memory/reset", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -2457,6 +2494,183 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 
 			fmt.Printf("🧹 Memory prune triggered: deleted=%d\n", deleted)
 			json.NewEncoder(w).Encode(map[string]any{"status": "ok", "deleted": deleted})
+		})
+
+		// API: Embedding Runtime Status (GET)
+		mux.HandleFunc("/api/v1/memory/embedding/status", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			health := probeEmbeddingRuntime(cfg)
+			embeddedCount, _ := countEmbeddedMemoryChunks()
+			pendingInstallAt, _ := timeSvc.GetSetting("memory_embedding_install_requested_at")
+			pendingInstallModel, _ := timeSvc.GetSetting("memory_embedding_install_model")
+
+			json.NewEncoder(w).Encode(map[string]any{
+				"status": "ok",
+				"embedding": map[string]any{
+					"enabled":         cfg.Memory.Embedding.Enabled,
+					"provider":        cfg.Memory.Embedding.Provider,
+					"model":           cfg.Memory.Embedding.Model,
+					"dimension":       cfg.Memory.Embedding.Dimension,
+					"normalize":       cfg.Memory.Embedding.Normalize,
+					"cacheDir":        cfg.Memory.Embedding.CacheDir,
+					"autoDownload":    cfg.Memory.Embedding.AutoDownload,
+					"endpoint":        cfg.Memory.Embedding.Endpoint,
+					"startupTimeoutS": cfg.Memory.Embedding.StartupTimeoutSec,
+					"fingerprint":     memoryEmbeddingFingerprint(cfg),
+				},
+				"runtime": map[string]any{
+					"ready":      health.Ready,
+					"status":     health.Status,
+					"detail":     health.Detail,
+					"checkedAt":  health.CheckedAt,
+					"httpStatus": health.HTTPStatus,
+				},
+				"index": map[string]any{
+					"embeddedChunks": embeddedCount,
+				},
+				"install": map[string]any{
+					"pending":            strings.TrimSpace(pendingInstallAt) != "",
+					"requestedAt":        strings.TrimSpace(pendingInstallAt),
+					"requestedModel":     strings.TrimSpace(pendingInstallModel),
+					"cachePathAvailable": embeddingCachePresent(cfg.Memory.Embedding.CacheDir),
+				},
+			})
+		})
+
+		// API: Embedding Runtime Health (GET)
+		mux.HandleFunc("/api/v1/memory/embedding/healthz", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			health := probeEmbeddingRuntime(cfg)
+			code := http.StatusOK
+			if !health.Ready {
+				code = http.StatusServiceUnavailable
+			}
+			w.WriteHeader(code)
+			json.NewEncoder(w).Encode(map[string]any{
+				"ready":      health.Ready,
+				"status":     health.Status,
+				"detail":     health.Detail,
+				"checkedAt":  health.CheckedAt,
+				"httpStatus": health.HTTPStatus,
+			})
+		})
+
+		// API: Embedding Runtime Install Bootstrap (POST)
+		mux.HandleFunc("/api/v1/memory/embedding/install", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var body struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			model := strings.TrimSpace(body.Model)
+			if model == "" {
+				model = strings.TrimSpace(cfg.Memory.Embedding.Model)
+			}
+			if model == "" {
+				http.Error(w, "embedding model is required", http.StatusBadRequest)
+				return
+			}
+			_ = timeSvc.SetSetting("memory_embedding_install_requested_at", time.Now().UTC().Format(time.RFC3339))
+			_ = timeSvc.SetSetting("memory_embedding_install_model", model)
+
+			cacheDir := strings.TrimSpace(cfg.Memory.Embedding.CacheDir)
+			if cacheDir != "" {
+				expanded := cacheDir
+				if strings.HasPrefix(expanded, "~") {
+					if home, err := os.UserHomeDir(); err == nil {
+						expanded = filepath.Join(home, strings.TrimPrefix(expanded, "~"))
+					}
+				}
+				_ = os.MkdirAll(expanded, 0o755)
+			}
+
+			json.NewEncoder(w).Encode(map[string]any{
+				"status": "ok",
+				"action": "install-requested",
+				"model":  model,
+			})
+		})
+
+		// API: Embedding Runtime Reindex (POST)
+		mux.HandleFunc("/api/v1/memory/embedding/reindex", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var body struct {
+				ConfirmWipe bool   `json:"confirmWipe"`
+				Reason      string `json:"reason"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid body", http.StatusBadRequest)
+				return
+			}
+			if !body.ConfirmWipe {
+				http.Error(w, "confirmWipe must be true", http.StatusBadRequest)
+				return
+			}
+			wiped, err := wipeAllMemoryChunks()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			reason := strings.TrimSpace(body.Reason)
+			if reason == "" {
+				reason = "manual_reindex"
+			}
+			_ = timeSvc.AddEvent(&timeline.TimelineEvent{
+				EventID:        fmt.Sprintf("MEMORY_EMBED_REINDEX_%d", time.Now().UnixNano()),
+				Timestamp:      time.Now(),
+				SenderID:       "system",
+				SenderName:     "KafClaw",
+				EventType:      "SYSTEM",
+				ContentText:    fmt.Sprintf("embedding reindex requested; wiped_chunks=%d reason=%s", wiped, reason),
+				Classification: "MEMORY_EMBEDDING_REINDEX",
+				Authorized:     true,
+			})
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":      "ok",
+				"wipedChunks": wiped,
+				"reason":      reason,
+			})
 		})
 
 		// API: Work Repo (GET/POST)
@@ -3388,6 +3602,7 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 		kafkaCancel := startGrpKafka(cfg.Group, mgr, ctx, orchDiscoveryHandler(orch))
 		grpState.SetManager(mgr, kafkaCancel)
 	}
+	startKnowledgeAnnouncements(ctx, cfg, timeSvc)
 
 	fmt.Println("Gateway running. Press Ctrl+C to stop.")
 	<-sigChan
@@ -3421,6 +3636,306 @@ func normalizeWhatsAppJID(jid string) string {
 	}
 	// Default to user JID.
 	return jid + "@s.whatsapp.net"
+}
+
+type embeddingRuntimeHealth struct {
+	Ready      bool      `json:"ready"`
+	Status     string    `json:"status"`
+	Detail     string    `json:"detail"`
+	CheckedAt  time.Time `json:"checkedAt"`
+	HTTPStatus int       `json:"httpStatus,omitempty"`
+}
+
+func probeEmbeddingRuntime(cfg *config.Config) embeddingRuntimeHealth {
+	out := embeddingRuntimeHealth{
+		Ready:     false,
+		Status:    "degraded",
+		Detail:    "embedding configuration not ready",
+		CheckedAt: time.Now().UTC(),
+	}
+	if cfg == nil {
+		out.Detail = "config is nil"
+		return out
+	}
+	if err := validateEmbeddingHardGate(cfg); err != nil {
+		out.Detail = err.Error()
+		return out
+	}
+	providerID := strings.ToLower(strings.TrimSpace(cfg.Memory.Embedding.Provider))
+	if providerID != "local-hf" {
+		out.Ready = true
+		out.Status = "ok"
+		out.Detail = "embedding provider configured (no local runtime probe required)"
+		return out
+	}
+	endpoint := strings.TrimSpace(cfg.Memory.Embedding.Endpoint)
+	if endpoint == "" {
+		out.Detail = "memory.embedding.endpoint is empty"
+		return out
+	}
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	healthURL := strings.TrimRight(endpoint, "/") + "/healthz"
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		out.Detail = fmt.Sprintf("local embedding runtime unreachable: %v", err)
+		return out
+	}
+	defer resp.Body.Close()
+	out.HTTPStatus = resp.StatusCode
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		out.Ready = true
+		out.Status = "ok"
+		out.Detail = "local embedding runtime healthy"
+		return out
+	}
+	out.Detail = fmt.Sprintf("local embedding runtime unhealthy (status=%d)", resp.StatusCode)
+	return out
+}
+
+func embeddingCachePresent(cacheDir string) bool {
+	p := strings.TrimSpace(cacheDir)
+	if p == "" {
+		return false
+	}
+	if strings.HasPrefix(p, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+		}
+	}
+	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+		return true
+	}
+	return false
+}
+
+func startKnowledgeAnnouncements(ctx context.Context, cfg *config.Config, timeSvc *timeline.TimelineService) {
+	if cfg == nil || timeSvc == nil || !cfg.Knowledge.Enabled {
+		return
+	}
+	if strings.TrimSpace(cfg.Node.ClawID) == "" || strings.TrimSpace(cfg.Node.InstanceID) == "" {
+		return
+	}
+	if strings.TrimSpace(cfg.Knowledge.Topics.Presence) == "" && strings.TrimSpace(cfg.Knowledge.Topics.Capabilities) == "" {
+		return
+	}
+	go func() {
+		_ = publishKnowledgeCapabilitiesAnnouncement(cfg, timeSvc)
+		_ = publishKnowledgePresenceAnnouncement(cfg, timeSvc, "active")
+
+		presenceTicker := time.NewTicker(45 * time.Second)
+		capabilityTicker := time.NewTicker(5 * time.Minute)
+		defer presenceTicker.Stop()
+		defer capabilityTicker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				_ = publishKnowledgePresenceAnnouncement(cfg, timeSvc, "stopping")
+				return
+			case <-presenceTicker.C:
+				_ = publishKnowledgePresenceAnnouncement(cfg, timeSvc, "active")
+			case <-capabilityTicker.C:
+				_ = publishKnowledgeCapabilitiesAnnouncement(cfg, timeSvc)
+			}
+		}
+	}()
+}
+
+func publishKnowledgePresenceAnnouncement(cfg *config.Config, timeSvc *timeline.TimelineService, status string) error {
+	topic := strings.TrimSpace(cfg.Knowledge.Topics.Presence)
+	if topic == "" {
+		return nil
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = "active"
+	}
+	now := time.Now().UTC()
+	env := knowledge.Envelope{
+		SchemaVersion:  knowledge.CurrentSchemaVersion,
+		Type:           knowledge.TypePresence,
+		TraceID:        newTraceID(),
+		Timestamp:      now,
+		IdempotencyKey: fmt.Sprintf("knowledge:presence:%s:%s:%d", cfg.Node.ClawID, cfg.Node.InstanceID, now.Unix()),
+		ClawID:         strings.TrimSpace(cfg.Node.ClawID),
+		InstanceID:     strings.TrimSpace(cfg.Node.InstanceID),
+		Payload: map[string]any{
+			"group":       strings.TrimSpace(cfg.Knowledge.Group),
+			"status":      status,
+			"displayName": strings.TrimSpace(cfg.Node.DisplayName),
+			"updatedAt":   now.Format(time.RFC3339),
+		},
+	}
+	if err := publishKnowledgeEnvelope(cfg, timeSvc, topic, env); err != nil {
+		return err
+	}
+	_ = timeSvc.SetSetting("knowledge_presence_last_at", now.Format(time.RFC3339))
+	return nil
+}
+
+func publishKnowledgeCapabilitiesAnnouncement(cfg *config.Config, timeSvc *timeline.TimelineService) error {
+	topic := strings.TrimSpace(cfg.Knowledge.Topics.Capabilities)
+	if topic == "" {
+		return nil
+	}
+	now := time.Now().UTC()
+	env := knowledge.Envelope{
+		SchemaVersion:  knowledge.CurrentSchemaVersion,
+		Type:           knowledge.TypeCapabilities,
+		TraceID:        newTraceID(),
+		Timestamp:      now,
+		IdempotencyKey: fmt.Sprintf("knowledge:capabilities:%s:%s:%d", cfg.Node.ClawID, cfg.Node.InstanceID, now.Unix()),
+		ClawID:         strings.TrimSpace(cfg.Node.ClawID),
+		InstanceID:     strings.TrimSpace(cfg.Node.InstanceID),
+		Payload: map[string]any{
+			"group":        strings.TrimSpace(cfg.Knowledge.Group),
+			"displayName":  strings.TrimSpace(cfg.Node.DisplayName),
+			"model":        strings.TrimSpace(cfg.Model.Name),
+			"capabilities": inferNodeCapabilities(cfg),
+			"updatedAt":    now.Format(time.RFC3339),
+		},
+	}
+	if err := publishKnowledgeEnvelope(cfg, timeSvc, topic, env); err != nil {
+		return err
+	}
+	_ = timeSvc.SetSetting("knowledge_capabilities_last_at", now.Format(time.RFC3339))
+	return nil
+}
+
+func inferNodeCapabilities(cfg *config.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	out := []string{"memory.search", "memory.semantic", "knowledge.governance"}
+	if cfg.Knowledge.Voting.Enabled {
+		out = append(out, "knowledge.vote")
+	}
+	if cfg.Tools.Subagents.MaxConcurrent > 0 {
+		out = append(out, "subagents")
+	}
+	if cfg.Channels.Slack.Enabled {
+		out = append(out, "channel.slack")
+	}
+	if cfg.Channels.MSTeams.Enabled {
+		out = append(out, "channel.msteams")
+	}
+	if cfg.Channels.WhatsApp.Enabled {
+		out = append(out, "channel.whatsapp")
+	}
+	seen := map[string]struct{}{}
+	filtered := make([]string, 0, len(out))
+	for _, v := range out {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		filtered = append(filtered, v)
+	}
+	return filtered
+}
+
+func collectMemoryKnowledgeMetrics(timeSvc *timeline.TimelineService) (map[string]any, error) {
+	if timeSvc == nil {
+		return map[string]any{
+			"status": "ok",
+			"slo":    map[string]any{},
+		}, nil
+	}
+	var totalChunks int64
+	_ = timeSvc.DB().QueryRow(`SELECT COUNT(*) FROM memory_chunks`).Scan(&totalChunks)
+	embeddedChunks, _ := countEmbeddedMemoryChunks()
+	overflowTotal := parseSettingInt(timeSvc, "memory_overflow_events_total")
+
+	factAccepted := countTimelineClassifications(timeSvc, "KNOWLEDGE_FACT_ACCEPTED")
+	factStale := countTimelineClassifications(timeSvc, "KNOWLEDGE_FACT_STALE")
+	factConflict := countTimelineClassifications(timeSvc, "KNOWLEDGE_FACT_CONFLICT")
+
+	approved, _ := timeSvc.ListKnowledgeProposals("approved", 10000, 0)
+	rejected, _ := timeSvc.ListKnowledgeProposals("rejected", 10000, 0)
+	expired, _ := timeSvc.ListKnowledgeProposals("expired", 10000, 0)
+	factsCount, _ := timeSvc.CountKnowledgeFacts("")
+
+	decisionCount := len(approved) + len(rejected) + len(expired)
+	precisionProxy := safeRatio(float64(len(approved)), float64(decisionCount))
+	recallProxy := safeRatio(float64(factsCount), float64(maxInt(1, len(approved))))
+	conflictRate := safeRatio(float64(factConflict), float64(maxInt(1, factAccepted+factStale+factConflict)))
+
+	return map[string]any{
+		"status": "ok",
+		"memory": map[string]any{
+			"chunksTotal":     totalChunks,
+			"chunksEmbedded":  embeddedChunks,
+			"overflowEvents":  overflowTotal,
+			"overflowPer1000": safeRatio(float64(overflowTotal*1000), float64(maxInt64(1, totalChunks))),
+		},
+		"knowledge": map[string]any{
+			"factsAccepted": factAccepted,
+			"factsStale":    factStale,
+			"factsConflict": factConflict,
+			"factsLatest":   factsCount,
+			"decisions": map[string]int{
+				"approved": len(approved),
+				"rejected": len(rejected),
+				"expired":  len(expired),
+			},
+		},
+		"slo": map[string]any{
+			"precisionProxy": precisionProxy,
+			"recallProxy":    recallProxy,
+			"conflictRate":   conflictRate,
+		},
+	}, nil
+}
+
+func countTimelineClassifications(timeSvc *timeline.TimelineService, classification string) int {
+	if timeSvc == nil || strings.TrimSpace(classification) == "" {
+		return 0
+	}
+	var count int
+	if err := timeSvc.DB().QueryRow(`SELECT COUNT(*) FROM timeline_events WHERE classification = ?`, classification).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}
+
+func parseSettingInt(timeSvc *timeline.TimelineService, key string) int {
+	if timeSvc == nil || strings.TrimSpace(key) == "" {
+		return 0
+	}
+	raw, err := timeSvc.GetSetting(key)
+	if err != nil {
+		return 0
+	}
+	n, convErr := strconv.Atoi(strings.TrimSpace(raw))
+	if convErr != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+func safeRatio(num, den float64) float64 {
+	if den <= 0 {
+		return 0
+	}
+	return num / den
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 type RepoItem struct {
@@ -3651,4 +4166,31 @@ func inferTopicCategory(name string) string {
 	default:
 		return "control"
 	}
+}
+
+func collectKnowledgeTopics(cfg *config.Config) []string {
+	if cfg == nil || !cfg.Knowledge.Enabled {
+		return nil
+	}
+	topics := []string{
+		strings.TrimSpace(cfg.Knowledge.Topics.Capabilities),
+		strings.TrimSpace(cfg.Knowledge.Topics.Presence),
+		strings.TrimSpace(cfg.Knowledge.Topics.Proposals),
+		strings.TrimSpace(cfg.Knowledge.Topics.Votes),
+		strings.TrimSpace(cfg.Knowledge.Topics.Decisions),
+		strings.TrimSpace(cfg.Knowledge.Topics.Facts),
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(topics))
+	for _, t := range topics {
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }

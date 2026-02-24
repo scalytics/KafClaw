@@ -226,6 +226,7 @@ func RunDoctorWithOptions(opts DoctorOptions) (DoctorReport, error) {
 	}
 
 	appendProviderDoctorChecks(&report, cfg)
+	appendMemoryEmbeddingDoctorChecks(&report, cfg, opts)
 
 	mode := detectRuntimeMode(cfg)
 	report.Checks = append(report.Checks, DoctorCheck{
@@ -899,6 +900,91 @@ func appendRateLimitDoctorChecks(report *DoctorReport) {
 			}
 		}
 	}
+}
+
+func appendMemoryEmbeddingDoctorChecks(report *DoctorReport, cfg *config.Config, opts DoctorOptions) {
+	if report == nil || cfg == nil {
+		return
+	}
+	ok, reason := memoryEmbeddingConfigured(cfg)
+	if !ok {
+		status := DoctorFail
+		if opts.Fix {
+			status = DoctorWarn
+		}
+		report.Checks = append(report.Checks, DoctorCheck{
+			Name:    "memory_embedding_configured",
+			Status:  status,
+			Message: reason,
+		})
+		if !opts.Fix {
+			return
+		}
+		if applyMemoryEmbeddingDefaults(cfg) {
+			if err := config.Save(cfg); err != nil {
+				report.Checks = append(report.Checks, DoctorCheck{
+					Name:    "memory_embedding_fix",
+					Status:  DoctorFail,
+					Message: fmt.Sprintf("failed to persist embedding defaults: %v", err),
+				})
+				return
+			}
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "memory_embedding_fix",
+				Status:  DoctorPass,
+				Message: "enabled default local embedding config (local-hf + BAAI/bge-small-en-v1.5)",
+			})
+		}
+		if okAfter, reasonAfter := memoryEmbeddingConfigured(cfg); okAfter {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "memory_embedding_configured_after_fix",
+				Status:  DoctorPass,
+				Message: "memory embedding configuration is valid after fix",
+			})
+		} else {
+			report.Checks = append(report.Checks, DoctorCheck{
+				Name:    "memory_embedding_configured_after_fix",
+				Status:  DoctorFail,
+				Message: reasonAfter,
+			})
+		}
+		return
+	}
+	report.Checks = append(report.Checks, DoctorCheck{
+		Name:    "memory_embedding_configured",
+		Status:  DoctorPass,
+		Message: "memory embedding is configured",
+	})
+}
+
+func memoryEmbeddingConfigured(cfg *config.Config) (bool, string) {
+	if cfg == nil {
+		return false, "memory embedding check failed: nil config"
+	}
+	emb := cfg.Memory.Embedding
+	providerID := strings.ToLower(strings.TrimSpace(emb.Provider))
+	if !emb.Enabled {
+		return false, "memory.embedding.enabled=false (run `kafclaw doctor --fix` to enable defaults)"
+	}
+	if providerID == "" || providerID == "disabled" {
+		return false, "memory.embedding.provider is empty/disabled (run `kafclaw doctor --fix` to enable defaults)"
+	}
+	if strings.TrimSpace(emb.Model) == "" {
+		return false, "memory.embedding.model is empty (run `kafclaw doctor --fix` to set defaults)"
+	}
+	if emb.Dimension <= 0 {
+		return false, "memory.embedding.dimension must be > 0 (run `kafclaw doctor --fix` to set defaults)"
+	}
+	return true, "memory embedding is configured"
+}
+
+func applyMemoryEmbeddingDefaults(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	def := config.DefaultConfig().Memory.Embedding
+	cfg.Memory.Embedding = def
+	return true
 }
 
 func detectRuntimeMode(cfg *config.Config) RuntimeMode {

@@ -1,6 +1,7 @@
 ---
-parent: Architecture and Security
+parent: Memory Management
 title: "Architecture: Timeline and Memory"
+nav_order: 3
 ---
 
 # Architecture: Timeline and Memory
@@ -83,14 +84,14 @@ KafClaw uses a 6-layer memory system stored in a single SQLite database. Each la
 
 ### Key Components
 
-- **MemoryService** — Store/search with automatic embedding. Graceful degradation if no embedder available.
-- **AutoIndexer** — Background batch indexer (5-item flush / 30s interval). Skips greetings and short content.
-- **SoulFileIndexer** — Indexes AGENTS.md, SOUL.md, USER.md, TOOLS.md, IDENTITY.md by `##` headers.
-- **Observer** — Enqueues messages, triggers LLM compression at threshold (default 50), produces prioritized observations.
-- **WorkingMemoryStore** — Per-user/thread scratchpads, falls back from thread-specific to resource-level.
-- **ER1Client** — Personal memory sync every 5 minutes (configurable).
-- **LifecycleManager** — Daily TTL pruning, max chunks enforcement (default 50,000).
-- **ExpertiseTracker** — Skill proficiency scoring per domain.
+- **MemoryService** - Store/search with automatic embedding. Graceful degradation if no embedder available.
+- **AutoIndexer** - Background batch indexer (5-item flush / 30s interval). Skips greetings and short content.
+- **SoulFileIndexer** - Indexes AGENTS.md, SOUL.md, USER.md, TOOLS.md, IDENTITY.md by `##` headers.
+- **Observer** - Enqueues messages, triggers LLM compression at threshold (default 50), produces prioritized observations.
+- **WorkingMemoryStore** - Per-user/thread scratchpads, falls back from thread-specific to resource-level.
+- **ER1Client** - Personal memory sync every 5 minutes (configurable).
+- **LifecycleManager** - Daily TTL pruning, max chunks enforcement (default 50,000).
+- **ExpertiseTracker** - Skill proficiency scoring per domain.
 
 ---
 
@@ -98,13 +99,13 @@ KafClaw uses a 6-layer memory system stored in a single SQLite database. Each la
 
 When processing a user message, the context builder assembles the system prompt in this order:
 
-1. **Identity** — Runtime info, version, date math
-2. **Bootstrap Files** — AGENTS.md, SOUL.md, USER.md, TOOLS.md, IDENTITY.md
-3. **Working Memory** — Scoped per user/thread
-4. **Observations** — Compressed session history, by date
-5. **Skills Summary** — Tool descriptions + skill docs
-6. **RAG Context** — Vector search across all 6 layers
-7. **Conversation** — Recent message history
+1. **Identity** - Runtime info, version, date math
+2. **Bootstrap Files** - AGENTS.md, SOUL.md, USER.md, TOOLS.md, IDENTITY.md
+3. **Working Memory** - Scoped per user/thread
+4. **Observations** - Compressed session history, by date
+5. **Skills Summary** - Tool descriptions + skill docs
+6. **RAG Context** - Vector search across all 6 layers
+7. **Conversation** - Recent message history
 
 Sections 1-4 form a stable prefix for prompt caching.
 
@@ -129,15 +130,15 @@ Vertical stream of cards:
 ### Electron App
 
 Memory-specific views:
-- MemoryPipeline — Visual pipeline diagram
-- MemoryLayerCard — Per-layer stats with color coding
-- WorkingMemoryPreview — Current scratchpad contents
-- MemoryStatusLed — Circle LED (purple=healthy, amber=high, red=critical)
+- MemoryPipeline - Visual pipeline diagram
+- MemoryLayerCard - Per-layer stats with color coding
+- WorkingMemoryPreview - Current scratchpad contents
+- MemoryStatusLed - Circle LED (purple=healthy, amber=high, red=critical)
 
 ---
 
 ## 5. Evolution from v1
 
-The original design referenced Qdrant (QMD) as an external vector database. KafClaw v2 replaced this with SQLite-vec — an embedded vector store requiring zero external dependencies. Cosine similarity computed in Go is sub-millisecond at under 10,000 chunks.
+The original design referenced Qdrant (QMD) as an external vector database. KafClaw v2 replaced this with SQLite-vec - an embedded vector store requiring zero external dependencies. Cosine similarity computed in Go is sub-millisecond at under 10,000 chunks.
 
 The ER1 integration and observer/reflector pattern were added in v2 to support long-term personal memory and conversation compression.

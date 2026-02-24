@@ -194,6 +194,64 @@ func NewTimelineService(dbPath string) (*TimelineService, error) {
 	)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_group_memory_author ON group_memory_items(author_id)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_group_memory_created ON group_memory_items(created_at)`)
+	// Best-effort migration: knowledge idempotency table.
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_idempotency (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		idempotency_key TEXT UNIQUE NOT NULL,
+		claw_id TEXT NOT NULL,
+		instance_id TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		topic_name TEXT NOT NULL,
+		trace_id TEXT NOT NULL,
+		processed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_idempotency_processed ON knowledge_idempotency(processed_at)`)
+	// Best-effort migration: knowledge facts latest-state table.
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_facts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		fact_id TEXT UNIQUE NOT NULL,
+		group_name TEXT NOT NULL,
+		subject TEXT NOT NULL,
+		predicate TEXT NOT NULL,
+		object TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		source TEXT NOT NULL,
+		proposal_id TEXT DEFAULT '',
+		decision_id TEXT DEFAULT '',
+		tags TEXT DEFAULT '[]',
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_facts_group ON knowledge_facts(group_name)`)
+	// Best-effort migration: knowledge proposals/votes tables.
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_proposals (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		proposal_id TEXT UNIQUE NOT NULL,
+		group_name TEXT NOT NULL,
+		title TEXT DEFAULT '',
+		statement TEXT NOT NULL,
+		tags TEXT DEFAULT '[]',
+		proposer_claw_id TEXT NOT NULL,
+		proposer_instance_id TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		yes_votes INTEGER NOT NULL DEFAULT 0,
+		no_votes INTEGER NOT NULL DEFAULT 0,
+		reason TEXT DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_proposals_group ON knowledge_proposals(group_name, status)`)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS knowledge_votes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		proposal_id TEXT NOT NULL,
+		claw_id TEXT NOT NULL,
+		instance_id TEXT NOT NULL,
+		vote TEXT NOT NULL,
+		reason TEXT DEFAULT '',
+		trace_id TEXT DEFAULT '',
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(proposal_id, claw_id)
+	)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_votes_proposal ON knowledge_votes(proposal_id)`)
 	// Best-effort migration: group skill channels table.
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS group_skill_channels (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -417,6 +475,299 @@ func (s *TimelineService) SetSetting(key, value string) error {
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
 	`, key, value)
 	return err
+}
+
+// RecordKnowledgeIdempotency inserts a knowledge message idempotency marker.
+// Returns inserted=false when the idempotency key already exists.
+func (s *TimelineService) RecordKnowledgeIdempotency(idempotencyKey, clawID, instanceID, messageType, topicName, traceID string) (bool, error) {
+	res, err := s.db.Exec(`INSERT INTO knowledge_idempotency
+		(idempotency_key, claw_id, instance_id, message_type, topic_name, trace_id)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		idempotencyKey, clawID, instanceID, messageType, topicName, traceID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return false, nil
+		}
+		return false, fmt.Errorf("record knowledge idempotency: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return true, nil
+	}
+	return rows > 0, nil
+}
+
+// GetKnowledgeFactLatest returns the current accepted state for a fact ID.
+func (s *TimelineService) GetKnowledgeFactLatest(factID string) (*KnowledgeFactRecord, error) {
+	row := s.db.QueryRow(`SELECT fact_id, group_name, subject, predicate, object, version, source,
+		COALESCE(proposal_id,''), COALESCE(decision_id,''), COALESCE(tags,'[]'), updated_at
+		FROM knowledge_facts WHERE fact_id = ?`, factID)
+	var rec KnowledgeFactRecord
+	err := row.Scan(
+		&rec.FactID,
+		&rec.GroupName,
+		&rec.Subject,
+		&rec.Predicate,
+		&rec.Object,
+		&rec.Version,
+		&rec.Source,
+		&rec.ProposalID,
+		&rec.DecisionID,
+		&rec.Tags,
+		&rec.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get knowledge fact latest: %w", err)
+	}
+	return &rec, nil
+}
+
+// UpsertKnowledgeFactLatest stores the accepted latest state for a fact.
+func (s *TimelineService) UpsertKnowledgeFactLatest(rec *KnowledgeFactRecord) error {
+	if rec == nil {
+		return fmt.Errorf("knowledge fact record is nil")
+	}
+	_, err := s.db.Exec(`INSERT INTO knowledge_facts
+		(fact_id, group_name, subject, predicate, object, version, source, proposal_id, decision_id, tags, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		ON CONFLICT(fact_id) DO UPDATE SET
+			group_name = excluded.group_name,
+			subject = excluded.subject,
+			predicate = excluded.predicate,
+			object = excluded.object,
+			version = excluded.version,
+			source = excluded.source,
+			proposal_id = excluded.proposal_id,
+			decision_id = excluded.decision_id,
+			tags = excluded.tags,
+			updated_at = datetime('now')`,
+		rec.FactID,
+		rec.GroupName,
+		rec.Subject,
+		rec.Predicate,
+		rec.Object,
+		rec.Version,
+		rec.Source,
+		rec.ProposalID,
+		rec.DecisionID,
+		rec.Tags,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert knowledge fact latest: %w", err)
+	}
+	return nil
+}
+
+// ListKnowledgeFacts returns latest accepted facts, optionally filtered by group.
+func (s *TimelineService) ListKnowledgeFacts(groupName string, limit, offset int) ([]KnowledgeFactRecord, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT fact_id, group_name, subject, predicate, object, version, source,
+		COALESCE(proposal_id,''), COALESCE(decision_id,''), COALESCE(tags,'[]'), updated_at
+		FROM knowledge_facts WHERE 1=1`
+	args := []interface{}{}
+	if strings.TrimSpace(groupName) != "" {
+		query += ` AND group_name = ?`
+		args = append(args, strings.TrimSpace(groupName))
+	}
+	query += ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list knowledge facts: %w", err)
+	}
+	defer rows.Close()
+	out := make([]KnowledgeFactRecord, 0, limit)
+	for rows.Next() {
+		var rec KnowledgeFactRecord
+		if err := rows.Scan(
+			&rec.FactID,
+			&rec.GroupName,
+			&rec.Subject,
+			&rec.Predicate,
+			&rec.Object,
+			&rec.Version,
+			&rec.Source,
+			&rec.ProposalID,
+			&rec.DecisionID,
+			&rec.Tags,
+			&rec.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *TimelineService) CountKnowledgeFacts(groupName string) (int, error) {
+	query := `SELECT COUNT(*) FROM knowledge_facts`
+	args := []interface{}{}
+	if strings.TrimSpace(groupName) != "" {
+		query += ` WHERE group_name = ?`
+		args = append(args, strings.TrimSpace(groupName))
+	}
+	var count int
+	if err := s.db.QueryRow(query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count knowledge facts: %w", err)
+	}
+	return count, nil
+}
+
+func (s *TimelineService) CreateKnowledgeProposal(rec *KnowledgeProposalRecord) error {
+	if rec == nil {
+		return fmt.Errorf("proposal is nil")
+	}
+	if strings.TrimSpace(rec.Status) == "" {
+		rec.Status = "pending"
+	}
+	_, err := s.db.Exec(`INSERT INTO knowledge_proposals
+		(proposal_id, group_name, title, statement, tags, proposer_claw_id, proposer_instance_id, status, yes_votes, no_votes, reason, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		rec.ProposalID, rec.GroupName, rec.Title, rec.Statement, rec.Tags,
+		rec.ProposerClawID, rec.ProposerInstanceID, rec.Status, rec.YesVotes, rec.NoVotes, rec.Reason,
+	)
+	if err != nil {
+		return fmt.Errorf("create knowledge proposal: %w", err)
+	}
+	return nil
+}
+
+func (s *TimelineService) GetKnowledgeProposal(proposalID string) (*KnowledgeProposalRecord, error) {
+	row := s.db.QueryRow(`SELECT proposal_id, group_name, COALESCE(title,''), statement, COALESCE(tags,'[]'),
+		proposer_claw_id, proposer_instance_id, status, yes_votes, no_votes, COALESCE(reason,''), created_at, updated_at
+		FROM knowledge_proposals WHERE proposal_id = ?`, proposalID)
+	var rec KnowledgeProposalRecord
+	err := row.Scan(
+		&rec.ProposalID,
+		&rec.GroupName,
+		&rec.Title,
+		&rec.Statement,
+		&rec.Tags,
+		&rec.ProposerClawID,
+		&rec.ProposerInstanceID,
+		&rec.Status,
+		&rec.YesVotes,
+		&rec.NoVotes,
+		&rec.Reason,
+		&rec.CreatedAt,
+		&rec.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get knowledge proposal: %w", err)
+	}
+	return &rec, nil
+}
+
+func (s *TimelineService) ListKnowledgeProposals(status string, limit, offset int) ([]KnowledgeProposalRecord, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT proposal_id, group_name, COALESCE(title,''), statement, COALESCE(tags,'[]'),
+		proposer_claw_id, proposer_instance_id, status, yes_votes, no_votes, COALESCE(reason,''), created_at, updated_at
+		FROM knowledge_proposals WHERE 1=1`
+	args := []interface{}{}
+	if strings.TrimSpace(status) != "" {
+		query += ` AND status = ?`
+		args = append(args, strings.TrimSpace(status))
+	}
+	query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list knowledge proposals: %w", err)
+	}
+	defer rows.Close()
+	out := make([]KnowledgeProposalRecord, 0, limit)
+	for rows.Next() {
+		var rec KnowledgeProposalRecord
+		if err := rows.Scan(
+			&rec.ProposalID,
+			&rec.GroupName,
+			&rec.Title,
+			&rec.Statement,
+			&rec.Tags,
+			&rec.ProposerClawID,
+			&rec.ProposerInstanceID,
+			&rec.Status,
+			&rec.YesVotes,
+			&rec.NoVotes,
+			&rec.Reason,
+			&rec.CreatedAt,
+			&rec.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *TimelineService) UpsertKnowledgeVote(rec *KnowledgeVoteRecord) error {
+	if rec == nil {
+		return fmt.Errorf("vote is nil")
+	}
+	_, err := s.db.Exec(`INSERT INTO knowledge_votes
+		(proposal_id, claw_id, instance_id, vote, reason, trace_id, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+		ON CONFLICT(proposal_id, claw_id) DO UPDATE SET
+			instance_id = excluded.instance_id,
+			vote = excluded.vote,
+			reason = excluded.reason,
+			trace_id = excluded.trace_id,
+			updated_at = datetime('now')`,
+		rec.ProposalID, rec.ClawID, rec.InstanceID, rec.Vote, rec.Reason, rec.TraceID,
+	)
+	if err != nil {
+		return fmt.Errorf("upsert knowledge vote: %w", err)
+	}
+	return nil
+}
+
+func (s *TimelineService) ListKnowledgeVotes(proposalID string) ([]KnowledgeVoteRecord, error) {
+	rows, err := s.db.Query(`SELECT proposal_id, claw_id, instance_id, vote, COALESCE(reason,''), COALESCE(trace_id,''), updated_at
+		FROM knowledge_votes WHERE proposal_id = ? ORDER BY updated_at ASC`, proposalID)
+	if err != nil {
+		return nil, fmt.Errorf("list knowledge votes: %w", err)
+	}
+	defer rows.Close()
+	out := make([]KnowledgeVoteRecord, 0, 8)
+	for rows.Next() {
+		var rec KnowledgeVoteRecord
+		if err := rows.Scan(
+			&rec.ProposalID,
+			&rec.ClawID,
+			&rec.InstanceID,
+			&rec.Vote,
+			&rec.Reason,
+			&rec.TraceID,
+			&rec.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *TimelineService) UpdateKnowledgeProposalDecision(proposalID, status string, yesVotes, noVotes int, reason string) error {
+	_, err := s.db.Exec(`UPDATE knowledge_proposals
+		SET status = ?, yes_votes = ?, no_votes = ?, reason = ?, updated_at = datetime('now')
+		WHERE proposal_id = ?`,
+		status, yesVotes, noVotes, reason, proposalID,
+	)
+	if err != nil {
+		return fmt.Errorf("update knowledge proposal decision: %w", err)
+	}
+	return nil
 }
 
 // IsSilentMode checks if silent mode is enabled. Defaults to true (safe default).
@@ -700,6 +1051,28 @@ func (s *TimelineService) ListPendingDeliveries(limit int) ([]AgentTask, error) 
 	}
 	defer rows.Close()
 	return scanTasks(rows)
+}
+
+// CountPendingDeliveries returns the number of completed tasks waiting for delivery.
+func (s *TimelineService) CountPendingDeliveries() (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks
+		WHERE status = 'completed' AND delivery_status = 'pending'
+		AND (delivery_next_at IS NULL OR delivery_next_at <= datetime('now'))`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count pending deliveries: %w", err)
+	}
+	return count, nil
+}
+
+// CountOpenTasks returns number of active tasks (pending/processing).
+func (s *TimelineService) CountOpenTasks() (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE status IN ('pending','processing')`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count open tasks: %w", err)
+	}
+	return count, nil
 }
 
 // ListTasks returns tasks filtered by optional status and channel.
@@ -1553,6 +1926,16 @@ func (s *TimelineService) ListGroupTasks(direction, status string, limit, offset
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// CountOpenGroupTasks returns number of group tasks still awaiting completion.
+func (s *TimelineService) CountOpenGroupTasks() (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM group_tasks WHERE status IN ('pending','accepted')`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count open group tasks: %w", err)
+	}
+	return count, nil
 }
 
 // ListAllGroupTraces returns paginated group traces with optional agent filter.

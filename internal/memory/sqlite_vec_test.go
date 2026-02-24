@@ -135,6 +135,39 @@ func TestSQLiteVecStore_LimitEnforced(t *testing.T) {
 	}
 }
 
+func TestSQLiteVecStore_UpsertTextAndSearchText(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	store := NewSQLiteVecStore(db, 3)
+	ctx := context.Background()
+
+	if err := store.UpsertText(ctx, "t1", map[string]interface{}{
+		"content": "network runbook vlan setup",
+		"source":  "user",
+		"tags":    "ops",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertText(ctx, "t2", map[string]interface{}{
+		"content": "database migration guide",
+		"source":  "user",
+		"tags":    "db",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.SearchText(ctx, "vlan", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 lexical result, got %d", len(results))
+	}
+	if results[0].ID != "t1" {
+		t.Fatalf("expected t1, got %s", results[0].ID)
+	}
+}
+
 func TestSQLiteVecStore_DimensionMismatchSkipped(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

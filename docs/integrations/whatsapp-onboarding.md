@@ -1,9 +1,10 @@
 ---
-parent: Integrations
-title: WhatsApp Onboarding — Buddy Access
+parent: Onboarding
+title: WhatsApp Onboarding - Buddy Access
+nav_order: 2
 ---
 
-# WhatsApp Onboarding — Buddy Access
+# WhatsApp Onboarding - Buddy Access
 
 End-to-end guide for connecting a buddy to your KafClaw instance via WhatsApp.
 
@@ -16,7 +17,7 @@ KafClaw uses **default-deny** for WhatsApp. New senders are blocked until the ow
 ## Step 1: Initial Setup (one-time)
 
 ```bash
-# First-time setup — creates config and workspace
+# First-time setup - creates config and workspace
 kafclaw onboard
 
 # Pair your WhatsApp account (scan QR code)
@@ -33,9 +34,9 @@ kafclaw whatsapp-setup
 ```
 
 This prompts for:
-- **Pairing token** — a shared secret your buddy sends as their first message
-- **Allowlist** — JIDs to pre-approve (format: `1234567890@s.whatsapp.net`)
-- **Denylist** — JIDs to permanently block
+- **Pairing token** - a shared secret your buddy sends as their first message
+- **Allowlist** - JIDs to pre-approve (format: `1234567890@s.whatsapp.net`)
+- **Denylist** - JIDs to permanently block
 
 ## Step 3: Start the Gateway
 
@@ -72,10 +73,10 @@ Once setup is verified and the buddy is approved:
 
 ## Security Notes
 
-- **Silent mode resets to ON** on every gateway restart. This is intentional — it prevents accidental sends after updates or crashes.
-- **Allowlist is persistent** — approved buddies remain approved across restarts.
-- **Denylist is permanent** — denied senders are blocked until explicitly removed.
-- **Token is one-time** — after a buddy is approved, the token is no longer needed for that sender.
+- **Silent mode resets to ON** on every gateway restart. This is intentional - it prevents accidental sends after updates or crashes.
+- **Allowlist is persistent** - approved buddies remain approved across restarts.
+- **Denylist is permanent** - denied senders are blocked until explicitly removed.
+- **Token is one-time** - after a buddy is approved, the token is no longer needed for that sender.
 
 ## Current capability note
 

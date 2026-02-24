@@ -284,6 +284,49 @@ type TopicMessageLogRecord struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// KnowledgeFactRecord is the latest accepted state of a shared knowledge fact.
+type KnowledgeFactRecord struct {
+	FactID     string    `json:"fact_id"`
+	GroupName  string    `json:"group_name"`
+	Subject    string    `json:"subject"`
+	Predicate  string    `json:"predicate"`
+	Object     string    `json:"object"`
+	Version    int       `json:"version"`
+	Source     string    `json:"source"`
+	ProposalID string    `json:"proposal_id,omitempty"`
+	DecisionID string    `json:"decision_id,omitempty"`
+	Tags       string    `json:"tags"` // JSON array
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// KnowledgeProposalRecord is a persisted shared-knowledge proposal.
+type KnowledgeProposalRecord struct {
+	ProposalID         string    `json:"proposal_id"`
+	GroupName          string    `json:"group_name"`
+	Title              string    `json:"title"`
+	Statement          string    `json:"statement"`
+	Tags               string    `json:"tags"` // JSON array
+	ProposerClawID     string    `json:"proposer_claw_id"`
+	ProposerInstanceID string    `json:"proposer_instance_id"`
+	Status             string    `json:"status"` // pending|approved|rejected|expired
+	YesVotes           int       `json:"yes_votes"`
+	NoVotes            int       `json:"no_votes"`
+	Reason             string    `json:"reason"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// KnowledgeVoteRecord is a single claw vote for one proposal.
+type KnowledgeVoteRecord struct {
+	ProposalID string    `json:"proposal_id"`
+	ClawID     string    `json:"claw_id"`
+	InstanceID string    `json:"instance_id"`
+	Vote       string    `json:"vote"` // yes|no
+	Reason     string    `json:"reason"`
+	TraceID    string    `json:"trace_id"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 // TopicStat holds per-topic aggregated statistics.
 type TopicStat struct {
 	TopicName      string  `json:"topic_name"`

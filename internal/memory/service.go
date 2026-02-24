@@ -25,6 +25,11 @@ type MemoryService struct {
 	embedder provider.Embedder
 }
 
+type textCapableStore interface {
+	UpsertText(ctx context.Context, id string, payload map[string]interface{}) error
+	SearchText(ctx context.Context, query string, limit int) ([]Result, error)
+}
+
 // NewMemoryService creates a new MemoryService.
 func NewMemoryService(store VectorStore, embedder provider.Embedder) *MemoryService {
 	return &MemoryService{store: store, embedder: embedder}
@@ -33,11 +38,22 @@ func NewMemoryService(store VectorStore, embedder provider.Embedder) *MemoryServ
 // Store embeds content and upserts it into the vector store.
 // Returns the chunk ID. Gracefully degrades if embedder is nil.
 func (m *MemoryService) Store(ctx context.Context, content, source, tags string) (string, error) {
+	id := chunkID(source, content)
+
 	if m.embedder == nil {
+		if ts, ok := m.store.(textCapableStore); ok {
+			err := ts.UpsertText(ctx, id, map[string]interface{}{
+				"content": content,
+				"source":  source,
+				"tags":    tags,
+			})
+			if err != nil {
+				return "", fmt.Errorf("upsert text-only chunk: %w", err)
+			}
+			return id, nil
+		}
 		return "", nil
 	}
-
-	id := chunkID(source, content)
 
 	resp, err := m.embedder.Embed(ctx, &provider.EmbeddingRequest{Input: content})
 	if err != nil {
@@ -59,23 +75,41 @@ func (m *MemoryService) Store(ctx context.Context, content, source, tags string)
 // Search finds the most relevant memory chunks for the given query.
 // Gracefully degrades if embedder is nil (returns nil).
 func (m *MemoryService) Search(ctx context.Context, query string, limit int) ([]MemoryChunk, error) {
-	if m.embedder == nil {
-		return nil, nil
-	}
 	if limit <= 0 {
 		limit = 5
 	}
 
+	if m.embedder == nil {
+		return m.searchTextFallback(ctx, query, limit)
+	}
+
 	resp, err := m.embedder.Embed(ctx, &provider.EmbeddingRequest{Input: query})
 	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
+		// Degrade gracefully when embedding query fails.
+		return m.searchTextFallback(ctx, query, limit)
 	}
 
 	results, err := m.store.Search(ctx, resp.Vector, limit)
 	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
+		return m.searchTextFallback(ctx, query, limit)
 	}
 
+	return chunksFromResults(results), nil
+}
+
+func (m *MemoryService) searchTextFallback(ctx context.Context, query string, limit int) ([]MemoryChunk, error) {
+	ts, ok := m.store.(textCapableStore)
+	if !ok {
+		return nil, nil
+	}
+	results, err := ts.SearchText(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("text fallback search: %w", err)
+	}
+	return chunksFromResults(results), nil
+}
+
+func chunksFromResults(results []Result) []MemoryChunk {
 	chunks := make([]MemoryChunk, len(results))
 	for i, r := range results {
 		content, _ := r.Payload["content"].(string)
@@ -89,7 +123,7 @@ func (m *MemoryService) Search(ctx context.Context, query string, limit int) ([]
 			Score:   r.Score,
 		}
 	}
-	return chunks, nil
+	return chunks
 }
 
 // SearchBySource searches memory filtered by source prefix.

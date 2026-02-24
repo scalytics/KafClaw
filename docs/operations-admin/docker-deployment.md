@@ -47,8 +47,8 @@ The Docker Compose setup mounts the following volumes:
 | `~/.kafclaw` | `/root/.kafclaw` | Config, timeline DB, WhatsApp session |
 
 Ports exposed:
-- `18790` — API server (POST /chat)
-- `18791` — Dashboard / Web UI
+- `18790` - API server (POST /chat)
+- `18791` - Dashboard / Web UI
 
 ## Notes
 

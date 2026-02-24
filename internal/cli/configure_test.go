@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/KafClaw/KafClaw/internal/timeline"
 )
 
 func TestParseCSVList(t *testing.T) {
@@ -237,5 +239,182 @@ func TestConfigureJSONOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, `"status": "ok"`) || !strings.Contains(out, `"command": "configure"`) {
 		t.Fatalf("expected configure json output, got %q", out)
+	}
+}
+
+func TestConfigureEmbeddingSwitchRequiresConfirmWhenEmbeddingsExist(t *testing.T) {
+	origKafkaSecurityProtocol := configureKafkaSecurityProtocol
+	origKafkaSASLMechanism := configureKafkaSASLMechanism
+	origKafkaSASLUsername := configureKafkaSASLUsername
+	origKafkaSASLPassword := configureKafkaSASLPassword
+	defer func() {
+		configureKafkaSecurityProtocol = origKafkaSecurityProtocol
+		configureKafkaSASLMechanism = origKafkaSASLMechanism
+		configureKafkaSASLUsername = origKafkaSASLUsername
+		configureKafkaSASLPassword = origKafkaSASLPassword
+	}()
+	configureKafkaSecurityProtocol = ""
+	configureKafkaSASLMechanism = ""
+	configureKafkaSASLUsername = ""
+	configureKafkaSASLPassword = ""
+
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
+	  "memory": {"embedding": {"enabled": true, "provider": "local-hf", "model": "old-model", "dimension": 384}}
+	}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	tl, err := timeline.NewTimelineService(filepath.Join(cfgDir, "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+	if _, err := tl.DB().Exec(`INSERT INTO memory_chunks (id, content, embedding, source) VALUES (?, ?, ?, ?)`,
+		"chunk-1", "hello", []byte{1, 2, 3, 4}, "conversation:test"); err != nil {
+		t.Fatalf("seed memory chunk: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	_, err = runRootCommand(t,
+		"configure",
+		"--non-interactive",
+		"--memory-embedding-model=new-model",
+	)
+	if err == nil {
+		t.Fatal("expected embedding switch to require --confirm-memory-wipe")
+	}
+	if !strings.Contains(err.Error(), "--confirm-memory-wipe") {
+		t.Fatalf("expected confirm-memory-wipe error, got %v", err)
+	}
+}
+
+func TestConfigureEmbeddingSwitchWithConfirmWipesMemory(t *testing.T) {
+	origKafkaSecurityProtocol := configureKafkaSecurityProtocol
+	origKafkaSASLMechanism := configureKafkaSASLMechanism
+	origKafkaSASLUsername := configureKafkaSASLUsername
+	origKafkaSASLPassword := configureKafkaSASLPassword
+	defer func() {
+		configureKafkaSecurityProtocol = origKafkaSecurityProtocol
+		configureKafkaSASLMechanism = origKafkaSASLMechanism
+		configureKafkaSASLUsername = origKafkaSASLUsername
+		configureKafkaSASLPassword = origKafkaSASLPassword
+	}()
+	configureKafkaSecurityProtocol = ""
+	configureKafkaSASLMechanism = ""
+	configureKafkaSASLUsername = ""
+	configureKafkaSASLPassword = ""
+
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
+	  "memory": {"embedding": {"enabled": true, "provider": "local-hf", "model": "old-model", "dimension": 384}}
+	}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	tl, err := timeline.NewTimelineService(filepath.Join(cfgDir, "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+	if _, err := tl.DB().Exec(`INSERT INTO memory_chunks (id, content, embedding, source) VALUES (?, ?, ?, ?)`,
+		"chunk-1", "hello", []byte{1, 2, 3, 4}, "conversation:test"); err != nil {
+		t.Fatalf("seed memory chunk: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	if _, err := runRootCommand(t,
+		"configure",
+		"--non-interactive",
+		"--memory-embedding-model=new-model",
+		"--confirm-memory-wipe",
+	); err != nil {
+		t.Fatalf("configure with confirmed wipe failed: %v", err)
+	}
+	var count int
+	if err := tl.DB().QueryRow(`SELECT COUNT(*) FROM memory_chunks`).Scan(&count); err != nil {
+		t.Fatalf("count memory chunks: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected memory chunks wiped, got count=%d", count)
+	}
+	var auditCount int
+	if err := tl.DB().QueryRow(`SELECT COUNT(*) FROM timeline WHERE classification = 'MEMORY_EMBEDDING_SWITCH'`).Scan(&auditCount); err != nil {
+		t.Fatalf("count embedding switch audit events: %v", err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("expected one embedding switch audit event, got %d", auditCount)
+	}
+}
+
+func TestConfigureEmbeddingFirstEnableDoesNotWipeTextOnlyRows(t *testing.T) {
+	origKafkaSecurityProtocol := configureKafkaSecurityProtocol
+	origKafkaSASLMechanism := configureKafkaSASLMechanism
+	origKafkaSASLUsername := configureKafkaSASLUsername
+	origKafkaSASLPassword := configureKafkaSASLPassword
+	defer func() {
+		configureKafkaSecurityProtocol = origKafkaSecurityProtocol
+		configureKafkaSASLMechanism = origKafkaSASLMechanism
+		configureKafkaSASLUsername = origKafkaSASLUsername
+		configureKafkaSASLPassword = origKafkaSASLPassword
+	}()
+	configureKafkaSecurityProtocol = ""
+	configureKafkaSASLMechanism = ""
+	configureKafkaSASLUsername = ""
+	configureKafkaSASLPassword = ""
+
+	tmpDir := t.TempDir()
+	cfgDir := filepath.Join(tmpDir, ".kafclaw")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
+	  "memory": {"embedding": {"enabled": false, "provider": "disabled", "model": "", "dimension": 384}}
+	}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	tl, err := timeline.NewTimelineService(filepath.Join(cfgDir, "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+	if _, err := tl.DB().Exec(`INSERT INTO memory_chunks (id, content, embedding, source) VALUES (?, ?, ?, ?)`,
+		"chunk-1", "hello", nil, "conversation:test"); err != nil {
+		t.Fatalf("seed text-only memory chunk: %v", err)
+	}
+
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	_ = os.Setenv("HOME", tmpDir)
+
+	if _, err := runRootCommand(t,
+		"configure",
+		"--non-interactive",
+		"--memory-embedding-enabled-set",
+		"--memory-embedding-enabled=true",
+		"--memory-embedding-provider=local-hf",
+		"--memory-embedding-model=BAAI/bge-small-en-v1.5",
+		"--memory-embedding-dimension=384",
+	); err != nil {
+		t.Fatalf("configure first embedding enable failed: %v", err)
+	}
+	var count int
+	if err := tl.DB().QueryRow(`SELECT COUNT(*) FROM memory_chunks`).Scan(&count); err != nil {
+		t.Fatalf("count memory chunks: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected memory rows preserved when enabling first embedding, got count=%d", count)
 	}
 }

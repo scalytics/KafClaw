@@ -4,7 +4,7 @@ package config
 import "time"
 
 // Config is the root configuration struct.
-// Top-level groups: Paths, Model, Channels, Providers, Gateway, Tools.
+// Top-level groups: Paths, Model, Channels, Providers, Gateway, Node, Memory, Knowledge, Tools.
 type Config struct {
 	Paths                 PathsConfig                 `json:"paths"`
 	Model                 ModelConfig                 `json:"model"`
@@ -12,6 +12,9 @@ type Config struct {
 	Channels              ChannelsConfig              `json:"channels"`
 	Providers             ProvidersConfig             `json:"providers"`
 	Gateway               GatewayConfig               `json:"gateway"`
+	Node                  NodeConfig                  `json:"node"`
+	Memory                MemoryConfig                `json:"memory"`
+	Knowledge             KnowledgeConfig             `json:"knowledge"`
 	Tools                 ToolsConfig                 `json:"tools"`
 	Skills                SkillsConfig                `json:"skills"`
 	Group                 GroupConfig                 `json:"group"`
@@ -234,6 +237,88 @@ type GatewayConfig struct {
 }
 
 // ---------------------------------------------------------------------------
+// Node – machine identity for claw-to-claw communication
+// ---------------------------------------------------------------------------
+
+// NodeConfig contains machine identity used for M2M coordination.
+type NodeConfig struct {
+	ClawID      string `json:"clawId" envconfig:"CLAW_ID"`
+	InstanceID  string `json:"instanceId" envconfig:"INSTANCE_ID"`
+	DisplayName string `json:"displayName" envconfig:"DISPLAY_NAME"`
+}
+
+// ---------------------------------------------------------------------------
+// Memory – embedding + retrieval controls
+// ---------------------------------------------------------------------------
+
+// MemoryConfig contains memory subsystem settings.
+type MemoryConfig struct {
+	Embedding MemoryEmbeddingConfig `json:"embedding"`
+	Search    MemorySearchConfig    `json:"search"`
+}
+
+// MemoryEmbeddingConfig configures embedding backend/runtime settings.
+type MemoryEmbeddingConfig struct {
+	Enabled           bool   `json:"enabled" envconfig:"ENABLED"`
+	Provider          string `json:"provider" envconfig:"PROVIDER"` // local-hf|openai|disabled
+	Model             string `json:"model" envconfig:"MODEL"`
+	Dimension         int    `json:"dimension" envconfig:"DIMENSION"`
+	Normalize         bool   `json:"normalize" envconfig:"NORMALIZE"`
+	CacheDir          string `json:"cacheDir" envconfig:"CACHE_DIR"`
+	AutoDownload      bool   `json:"autoDownload" envconfig:"AUTO_DOWNLOAD"`
+	Endpoint          string `json:"endpoint" envconfig:"ENDPOINT"`
+	StartupTimeoutSec int    `json:"startupTimeoutSec" envconfig:"STARTUP_TIMEOUT_SEC"`
+}
+
+// MemorySearchConfig configures recall behavior.
+type MemorySearchConfig struct {
+	Mode       string  `json:"mode" envconfig:"MODE"` // hybrid|semantic|keyword
+	MaxResults int     `json:"maxResults" envconfig:"MAX_RESULTS"`
+	MinScore   float64 `json:"minScore" envconfig:"MIN_SCORE"`
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge – shared pool governance over Kafka
+// ---------------------------------------------------------------------------
+
+// KnowledgeConfig configures shared knowledge publication and voting.
+type KnowledgeConfig struct {
+	Enabled           bool                   `json:"enabled" envconfig:"ENABLED"`
+	GovernanceEnabled bool                   `json:"governanceEnabled" envconfig:"GOVERNANCE_ENABLED"`
+	Group             string                 `json:"group" envconfig:"GROUP"`
+	ShareMode         string                 `json:"shareMode" envconfig:"SHARE_MODE"` // proposal|direct
+	Topics            KnowledgeTopicsConfig  `json:"topics"`
+	Publish           KnowledgePublishConfig `json:"publish"`
+	Voting            KnowledgeVotingConfig  `json:"voting"`
+}
+
+// KnowledgeTopicsConfig defines topic names used by the knowledge protocol.
+type KnowledgeTopicsConfig struct {
+	Capabilities string `json:"capabilities" envconfig:"TOPIC_CAPABILITIES"`
+	Presence     string `json:"presence" envconfig:"TOPIC_PRESENCE"`
+	Proposals    string `json:"proposals" envconfig:"TOPIC_PROPOSALS"`
+	Votes        string `json:"votes" envconfig:"TOPIC_VOTES"`
+	Decisions    string `json:"decisions" envconfig:"TOPIC_DECISIONS"`
+	Facts        string `json:"facts" envconfig:"TOPIC_FACTS"`
+}
+
+// KnowledgePublishConfig configures policy tags for shared publication.
+type KnowledgePublishConfig struct {
+	AllowTags []string `json:"allowTags"`
+	DenyTags  []string `json:"denyTags"`
+}
+
+// KnowledgeVotingConfig configures quorum voting behavior.
+type KnowledgeVotingConfig struct {
+	Enabled       bool `json:"enabled" envconfig:"ENABLED"`
+	MinPoolSize   int  `json:"minPoolSize" envconfig:"MIN_POOL_SIZE"`
+	QuorumYes     int  `json:"quorumYes" envconfig:"QUORUM_YES"`
+	QuorumNo      int  `json:"quorumNo" envconfig:"QUORUM_NO"`
+	TimeoutSec    int  `json:"timeoutSec" envconfig:"TIMEOUT_SEC"`
+	AllowSelfVote bool `json:"allowSelfVote" envconfig:"ALLOW_SELF_VOTE"`
+}
+
+// ---------------------------------------------------------------------------
 // Orchestrator – multi-agent coordination
 // ---------------------------------------------------------------------------
 
@@ -377,6 +462,7 @@ type SubagentsToolConfig struct {
 	MaxSpawnDepth       int                `json:"maxSpawnDepth" envconfig:"MAX_SPAWN_DEPTH"`
 	MaxChildrenPerAgent int                `json:"maxChildrenPerAgent" envconfig:"MAX_CHILDREN_PER_AGENT"`
 	ArchiveAfterMinutes int                `json:"archiveAfterMinutes" envconfig:"ARCHIVE_AFTER_MINUTES"`
+	MemoryShareMode     string             `json:"memoryShareMode" envconfig:"MEMORY_SHARE_MODE"` // isolated|handoff|inherit-readonly
 	AllowAgents         []string           `json:"allowAgents" envconfig:"ALLOW_AGENTS"`
 	Model               string             `json:"model" envconfig:"MODEL"`
 	Thinking            string             `json:"thinking" envconfig:"THINKING"`
@@ -511,6 +597,55 @@ func DefaultConfig() *Config {
 			DashboardPort: 18791,
 			DaemonRuntime: "native",
 		},
+		Node: NodeConfig{
+			ClawID:      "claw-local",
+			InstanceID:  "default",
+			DisplayName: "KafClaw Local",
+		},
+		Memory: MemoryConfig{
+			Embedding: MemoryEmbeddingConfig{
+				Enabled:           true,
+				Provider:          "local-hf",
+				Model:             "BAAI/bge-small-en-v1.5",
+				Dimension:         384,
+				Normalize:         true,
+				CacheDir:          "~/.kafclaw/models",
+				AutoDownload:      true,
+				Endpoint:          "http://127.0.0.1:8091",
+				StartupTimeoutSec: 45,
+			},
+			Search: MemorySearchConfig{
+				Mode:       "hybrid",
+				MaxResults: 8,
+				MinScore:   0.22,
+			},
+		},
+		Knowledge: KnowledgeConfig{
+			Enabled:           false,
+			GovernanceEnabled: true,
+			Group:             "kafclaw",
+			ShareMode:         "proposal",
+			Topics: KnowledgeTopicsConfig{
+				Capabilities: "group.kafclaw.knowledge.capabilities",
+				Presence:     "group.kafclaw.knowledge.presence",
+				Proposals:    "group.kafclaw.knowledge.proposals",
+				Votes:        "group.kafclaw.knowledge.votes",
+				Decisions:    "group.kafclaw.knowledge.decisions",
+				Facts:        "group.kafclaw.knowledge.facts",
+			},
+			Publish: KnowledgePublishConfig{
+				AllowTags: []string{"ops", "security", "runbook", "integration"},
+				DenyTags:  []string{"pii", "secrets", "customer-private"},
+			},
+			Voting: KnowledgeVotingConfig{
+				Enabled:       true,
+				MinPoolSize:   3,
+				QuorumYes:     2,
+				QuorumNo:      2,
+				TimeoutSec:    120,
+				AllowSelfVote: false,
+			},
+		},
 		Tools: ToolsConfig{
 			Exec: ExecToolConfig{
 				Timeout:             60 * time.Second,
@@ -526,6 +661,7 @@ func DefaultConfig() *Config {
 				MaxSpawnDepth:       1,
 				MaxChildrenPerAgent: 5,
 				ArchiveAfterMinutes: 60,
+				MemoryShareMode:     "handoff",
 			},
 		},
 		Skills: SkillsConfig{

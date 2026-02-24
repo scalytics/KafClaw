@@ -35,7 +35,20 @@ Most-used keys stored in `timeline.db`:
 | `selected_repo_path` | Active repository selected in dashboard |
 | `group_name` | Current collaboration group name |
 | `group_active` | Group participation flag |
+| `group_heartbeat_last_attempt_at` | Last heartbeat attempt timestamp (RFC3339 UTC) |
+| `group_heartbeat_last_success_at` | Last successful heartbeat timestamp (RFC3339 UTC) |
+| `group_heartbeat_seq` | Monotonic local heartbeat sequence counter |
+| `runtime_reconcile_last_at` | Last startup reconciliation timestamp |
+| `runtime_reconcile_pending_deliveries` | Pending completed task deliveries discovered at startup |
+| `runtime_reconcile_open_tasks` | Open task count (`pending`/`processing`) discovered at startup |
+| `runtime_reconcile_open_group_tasks` | Open group task count (`pending`/`accepted`) discovered at startup |
 | `kafscale_lfs_proxy_url` | LFS proxy URL for shared artifacts |
+| `knowledge_presence_last_at` | Last published knowledge presence announcement (RFC3339 UTC) |
+| `knowledge_capabilities_last_at` | Last published knowledge capabilities announcement (RFC3339 UTC) |
+| `memory_embedding_install_requested_at` | Last embedding install bootstrap request timestamp (RFC3339 UTC) |
+| `memory_embedding_install_model` | Embedding model last requested for install/bootstrap |
+| `memory_overflow_events_total` | Count of memory-context truncation events due to budget limits |
+| `memory_overflow_events_<lane>` | Per-lane overflow counters (e.g. `rag`, `working`, `observation`) |
 
 ## Useful CLI Commands
 
@@ -60,6 +73,101 @@ Diagnostics:
 kafclaw status
 kafclaw doctor
 ```
+
+## Node Identity (Required for Shared Knowledge)
+
+`node.clawId` and `node.instanceId` identify who published a knowledge envelope.
+They are required for proposal/vote/decision/fact workflows.
+
+```json
+{
+  "node": {
+    "clawId": "claw-a",
+    "instanceId": "inst-a"
+  }
+}
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `node.clawId` | string | Stable claw identity used for voting and attribution |
+| `node.instanceId` | string | Runtime instance identity for a specific process |
+
+Operational note:
+- Missing `node.clawId`/`node.instanceId` blocks governed knowledge commands and apply paths.
+
+## Memory Embedding Configuration
+
+`memory.embedding` is treated as required for semantic memory operation.
+
+```json
+{
+  "memory": {
+    "embedding": {
+      "enabled": true,
+      "provider": "local-hf",
+      "model": "BAAI/bge-small-en-v1.5",
+      "dimension": 384,
+      "normalize": true
+    }
+  }
+}
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `memory.embedding.enabled` | bool | Must be `true` for normal memory mode |
+| `memory.embedding.provider` | string | Embedding backend (`local-hf`, `openai`, etc.) |
+| `memory.embedding.model` | string | Embedding model identifier |
+| `memory.embedding.dimension` | int | Embedding vector dimension (`> 0`) |
+| `memory.embedding.normalize` | bool | Apply vector normalization |
+
+Safety behavior:
+- Adding a first embedding later does not wipe existing text-only memory rows.
+- Switching an already-used embedding fingerprint requires `--confirm-memory-wipe`; without it, `configure` aborts.
+- When confirmed, `configure` wipes `memory_chunks` before saving the new embedding config.
+- `kafclaw doctor --fix` restores default embedding settings if missing/disabled.
+
+## Knowledge Envelope Contract (Kafka)
+
+When `knowledge.enabled=true`, knowledge topics (`knowledge.topics.*`) consume/publish envelopes that must include:
+- `schemaVersion`
+- `type` (`capabilities|presence|proposal|vote|decision|fact`)
+- `traceId`
+- `timestamp`
+- `idempotencyKey`
+- `clawId`
+- `instanceId`
+
+`clawId`/`instanceId` are enforced at validation time, and `idempotencyKey` is persisted in `knowledge_idempotency` to prevent duplicate apply.
+
+See [Knowledge Contracts](/reference/knowledge-contracts/) for payload examples.
+
+Governance feature flag:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `knowledge.governanceEnabled` | bool | Enables proposal/vote/decision/fact apply paths (CLI + Kafka handler) |
+
+## Knowledge Voting Policy
+
+`knowledge.voting` controls quorum-based governance for shared decisions.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `knowledge.voting.enabled` | bool | Enable voting workflow |
+| `knowledge.voting.minPoolSize` | int | Activate voting when active pool size is at least this value |
+| `knowledge.voting.quorumYes` | int | Minimum yes votes required for approval |
+| `knowledge.voting.quorumNo` | int | Minimum no votes required for rejection |
+| `knowledge.voting.timeoutSec` | int | Proposal timeout window (seconds) |
+| `knowledge.voting.allowSelfVote` | bool | Allow proposer to cast a vote on own proposal |
+
+Shared fact version policy:
+- New `factId` must start at `version=1`.
+- Existing facts accept only strictly sequential updates (`currentVersion + 1`).
+- Same/lower versions with identical content are treated as `stale` (ignored safely).
+- Same/lower versions with different content are `conflict`.
+- Version gaps (`incoming > currentVersion + 1`) are `conflict` (out-of-order).
 
 ## Model Configuration
 
@@ -133,6 +241,27 @@ Each provider entry accepts `apiKey` and `apiBase`. See [LLM Providers](/referen
 | `agents.list[].model.fallbacks` | []string | Fallback models tried on transient errors |
 | `agents.list[].subagents.model` | string | Model for subagents spawned by this agent |
 
+## Subagent Memory Share Mode
+
+```json
+{
+  "tools": {
+    "subagents": {
+      "memoryShareMode": "handoff"
+    }
+  }
+}
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `tools.subagents.memoryShareMode` | string | Subagent memory mode: `isolated`, `handoff` (default), `inherit-readonly` |
+
+Mode behavior:
+- `isolated`: child session is isolated; no automatic parent-session handoff write.
+- `handoff`: child stays isolated; completion handoff is appended to parent session.
+- `inherit-readonly`: child receives read-only parent snapshot and still writes completion handoff to parent session.
+
 ## Middleware Configuration
 
 | Section | Reference |
@@ -146,7 +275,7 @@ Each provider entry accepts `apiKey` and `apiBase`. See [LLM Providers](/referen
 
 - `OPENAI_API_KEY`
 - `OPENROUTER_API_KEY`
-- `KAFCLAW_MODEL` — global model (e.g. `claude/claude-sonnet-4-5`)
+- `KAFCLAW_MODEL` - global model (e.g. `claude/claude-sonnet-4-5`)
 - `KAFCLAW_AGENTS_WORKSPACE`
 - `KAFCLAW_AGENTS_WORK_REPO_PATH`
 - `KAFCLAW_GATEWAY_HOST`

@@ -142,10 +142,10 @@ Operational notes:
 | `Port` | `18790` | `KAFCLAW_GATEWAY_PORT` | API port |
 | `DashboardPort` | `18791` | `KAFCLAW_GATEWAY_DASHBOARD_PORT` | Dashboard port |
 | `AuthToken` | *(empty)* | `KAFCLAW_GATEWAY_AUTH_TOKEN` | Dashboard API bearer token (except `/api/v1/status`) |
-| `TLSCert` | *(empty)* | — | Optional TLS certificate path |
-| `TLSKey` | *(empty)* | — | Optional TLS private key path |
+| `TLSCert` | *(empty)* | - | Optional TLS certificate path |
+| `TLSKey` | *(empty)* | - | Optional TLS private key path |
 
-**LAN access:** The default `Host: 127.0.0.1` only accepts local connections. To expose the gateway on your network, set `Host` to `0.0.0.0` (all interfaces) or a specific LAN IP, and set `AuthToken`. Use `make run-headless` for the recommended configuration. The gateway serves plain HTTP — do not use `https://` in the browser unless TLS is configured.
+**LAN access:** The default `Host: 127.0.0.1` only accepts local connections. To expose the gateway on your network, set `Host` to `0.0.0.0` (all interfaces) or a specific LAN IP, and set `AuthToken`. Use `make run-headless` for the recommended configuration. The gateway serves plain HTTP - do not use `https://` in the browser unless TLS is configured.
 
 **Auth scope:** `AuthToken` is enforced on dashboard API routes on port `18791` (excluding `/api/v1/status` and CORS preflight), and on API server `POST /chat` on port `18790`.
 
@@ -188,14 +188,15 @@ Operational notes:
 
 | Field | Default | Env Var | Description |
 |-------|---------|---------|-------------|
-| `Exec.Timeout` | `60s` | — | Shell command timeout |
+| `Exec.Timeout` | `60s` | - | Shell command timeout |
 | `Exec.RestrictToWorkspace` | `true` | `KAFCLAW_TOOLS_EXEC_RESTRICT_WORKSPACE` | Confine shell to workspace |
-| `Web.Search.MaxResults` | `10` | — | Max web search results |
+| `Web.Search.MaxResults` | `10` | - | Max web search results |
 | `Web.Search.APIKey` | *(empty)* | `KAFCLAW_BRAVE_API_KEY` | Brave Search API key |
 | `Subagents.MaxConcurrent` | `8` | `KAFCLAW_TOOLS_SUBAGENTS_MAX_CONCURRENT` | Max active subagent runs globally |
 | `Subagents.MaxSpawnDepth` | `1` | `KAFCLAW_TOOLS_SUBAGENTS_MAX_SPAWN_DEPTH` | Max spawn depth (default prevents nested child spawning) |
 | `Subagents.MaxChildrenPerAgent` | `5` | `KAFCLAW_TOOLS_SUBAGENTS_MAX_CHILDREN_PER_AGENT` | Max active child runs per parent session |
 | `Subagents.ArchiveAfterMinutes` | `60` | `KAFCLAW_TOOLS_SUBAGENTS_ARCHIVE_AFTER_MINUTES` | Subagent retention/archive window |
+| `Subagents.MemoryShareMode` | `handoff` | `KAFCLAW_TOOLS_SUBAGENTS_MEMORY_SHARE_MODE` | Memory sharing mode: `isolated`, `handoff`, `inherit-readonly` |
 | `Subagents.AllowAgents` | *(current agent only)* | `KAFCLAW_TOOLS_SUBAGENTS_ALLOW_AGENTS` | Allowed `agentId` values for `sessions_spawn` (`*` allows any) |
 | `Subagents.Model` | *(inherit main model)* | `KAFCLAW_TOOLS_SUBAGENTS_MODEL` | Default model for spawned subagents |
 | `Subagents.Thinking` | *(empty)* | `KAFCLAW_TOOLS_SUBAGENTS_THINKING` | Default thinking level for spawned subagents |
@@ -212,6 +213,7 @@ Subagent control operations:
 - `subagents(action=kill_all)`: stop all active child runs for current root session scope
 - `subagents(action=steer,target=<selector>,input=<text>)`: stop target and spawn a steered replacement run
 - child loop policy is depth-aware: `sessions_spawn` is denied at/after max depth
+- child memory writes are isolated from parent private scope; parent ingest uses explicit handoff path when enabled
 - optional child allow/deny policy via `tools.subagents.tools.allow` and `tools.subagents.tools.deny` (wildcard suffix `*` supported)
 - selectors for `target`: run ID, `last`, numeric index, label prefix, or child session key
 - `sessions_spawn` supports `runTimeoutSeconds` for per-run timeout
@@ -305,7 +307,7 @@ git, ls, cat, pwd, rg, grep, sed, head, tail, wc, echo
 | Fork bombs | `:(){ :|:& };:` |
 | System control | `shutdown`, `reboot`, `halt`, `init [0-6]`, `systemctl` |
 
-**Path traversal:** `../`, `..\`, `/..`, `\..` — rejected when workspace restriction is enabled.
+**Path traversal:** `../`, `..\`, `/..`, `\..` - rejected when workspace restriction is enabled.
 
 **Timeout:** Default 60 seconds. Commands exceeding timeout are killed.
 
@@ -414,10 +416,10 @@ See [Models CLI Reference](/reference/models-cli/) for all auth commands.
 
 A configurable middleware chain runs between the agent loop and the LLM provider:
 
-- **Content Classifier** — sensitivity tagging and model rerouting
-- **Prompt Guard** — PII/secret scanning (warn, redact, or block)
-- **Output Sanitizer** — response redaction and deny pattern filtering
-- **FinOps Recorder** — per-request cost calculation and budget warnings
+- **Content Classifier** - sensitivity tagging and model rerouting
+- **Prompt Guard** - PII/secret scanning (warn, redact, or block)
+- **Output Sanitizer** - response redaction and deny pattern filtering
+- **FinOps Recorder** - per-request cost calculation and budget warnings
 
 See [Chat Middleware Reference](/reference/middleware/) for configuration.
 
@@ -474,15 +476,20 @@ User Query --> Embed(query) --> VectorStore.Search(top 5) --> Filter(score >= 0.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/memory/status` | GET | Layer stats, observer, ER1, expertise |
+| `/api/v1/memory/metrics` | GET | Memory/knowledge SLO metrics (precision/recall proxies, overflow, stale/conflict) |
 | `/api/v1/memory/reset` | POST | Reset layer or all |
 | `/api/v1/memory/config` | POST | Update memory settings |
 | `/api/v1/memory/prune` | POST | Trigger lifecycle pruning |
+| `/api/v1/memory/embedding/status` | GET | Embedding runtime/config status + index/install metadata |
+| `/api/v1/memory/embedding/healthz` | GET | Embedding runtime readiness probe |
+| `/api/v1/memory/embedding/install` | POST | Queue local embedding model install/bootstrap |
+| `/api/v1/memory/embedding/reindex` | POST | Wipe/rebuild embedding index (`confirmWipe=true`) |
 
 ### Graceful Degradation
 
 If no embedder available (provider doesn't support it):
-- `Store()` returns `("", nil)` — no error, no storage
-- `Search()` returns `(nil, nil)` — no error, no results
+- `Store()` returns `("", nil)` - no error, no storage
+- `Search()` returns `(nil, nil)` - no error, no results
 - Memory tools (`remember`, `recall`) not registered
 
 ---
@@ -607,17 +614,17 @@ Stored in `settings` table of `~/.kafclaw/timeline.db`.
 Web UI user identities stored in `web_users` table.
 
 Operations:
-- `CreateWebUser(name)` — Create or return existing
-- `ListWebUsers()` — All users sorted by name
-- `SetWebUserForceSend(id, bool)` — Toggle force delivery
+- `CreateWebUser(name)` - Create or return existing
+- `ListWebUsers()` - All users sorted by name
+- `SetWebUserForceSend(id, bool)` - Toggle force delivery
 
 ### Web Links (Cross-Channel Identity)
 
 Link web user to WhatsApp JID for cross-channel identity.
 
-- `LinkWebUser(webUserID, whatsappJID)` — Upsert
-- `UnlinkWebUser(webUserID)` — Remove link
-- `GetWebLink(webUserID)` — Returns JID
+- `LinkWebUser(webUserID, whatsappJID)` - Upsert
+- `UnlinkWebUser(webUserID)` - Remove link
+- `GetWebLink(webUserID)` - Returns JID
 
 ### API Endpoints
 

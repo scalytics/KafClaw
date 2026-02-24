@@ -172,6 +172,259 @@ func TestListPendingDeliveries(t *testing.T) {
 	}
 }
 
+func TestCountPendingDeliveriesAndOpenTasks(t *testing.T) {
+	svc := newTestTimeline(t)
+
+	task1, _ := svc.CreateTask(&AgentTask{Channel: "cli", ChatID: "a", ContentIn: "1"})
+	task2, _ := svc.CreateTask(&AgentTask{Channel: "cli", ChatID: "b", ContentIn: "2"})
+	task3, _ := svc.CreateTask(&AgentTask{Channel: "cli", ChatID: "c", ContentIn: "3"})
+
+	_ = svc.UpdateTaskStatus(task1.TaskID, TaskStatusCompleted, "done", "")
+	_ = svc.UpdateTaskStatus(task2.TaskID, TaskStatusProcessing, "", "")
+	_ = svc.UpdateTaskStatus(task3.TaskID, TaskStatusFailed, "", "x")
+
+	pendingDeliveries, err := svc.CountPendingDeliveries()
+	if err != nil {
+		t.Fatalf("count pending deliveries: %v", err)
+	}
+	if pendingDeliveries != 1 {
+		t.Fatalf("expected 1 pending delivery, got %d", pendingDeliveries)
+	}
+
+	openTasks, err := svc.CountOpenTasks()
+	if err != nil {
+		t.Fatalf("count open tasks: %v", err)
+	}
+	if openTasks != 1 {
+		t.Fatalf("expected 1 open task, got %d", openTasks)
+	}
+}
+
+func TestCountOpenGroupTasks(t *testing.T) {
+	svc := newTestTimeline(t)
+	if err := svc.InsertGroupTask(&GroupTaskRecord{
+		TaskID:      "g1",
+		Description: "pending",
+		Direction:   "incoming",
+		RequesterID: "a",
+		Status:      "pending",
+	}); err != nil {
+		t.Fatalf("insert group task 1: %v", err)
+	}
+	if err := svc.InsertGroupTask(&GroupTaskRecord{
+		TaskID:      "g2",
+		Description: "accepted",
+		Direction:   "incoming",
+		RequesterID: "a",
+		Status:      "pending",
+	}); err != nil {
+		t.Fatalf("insert group task 2: %v", err)
+	}
+	if err := svc.AcceptGroupTask("g2", "worker-1"); err != nil {
+		t.Fatalf("accept group task: %v", err)
+	}
+	if err := svc.InsertGroupTask(&GroupTaskRecord{
+		TaskID:      "g3",
+		Description: "completed",
+		Direction:   "incoming",
+		RequesterID: "a",
+		Status:      "completed",
+	}); err != nil {
+		t.Fatalf("insert group task 3: %v", err)
+	}
+
+	openGroupTasks, err := svc.CountOpenGroupTasks()
+	if err != nil {
+		t.Fatalf("count open group tasks: %v", err)
+	}
+	if openGroupTasks != 2 {
+		t.Fatalf("expected 2 open group tasks, got %d", openGroupTasks)
+	}
+}
+
+func TestRecordKnowledgeIdempotency(t *testing.T) {
+	svc := newTestTimeline(t)
+	inserted, err := svc.RecordKnowledgeIdempotency("idem-1", "claw-a", "inst-a", "proposal", "group.g.knowledge.proposals", "trace-1")
+	if err != nil {
+		t.Fatalf("record knowledge idempotency (first): %v", err)
+	}
+	if !inserted {
+		t.Fatal("expected first insert to be accepted")
+	}
+
+	inserted, err = svc.RecordKnowledgeIdempotency("idem-1", "claw-a", "inst-a", "proposal", "group.g.knowledge.proposals", "trace-1")
+	if err != nil {
+		t.Fatalf("record knowledge idempotency (duplicate): %v", err)
+	}
+	if inserted {
+		t.Fatal("expected duplicate insert to be ignored")
+	}
+}
+
+func TestKnowledgeFactLatestCRUD(t *testing.T) {
+	svc := newTestTimeline(t)
+	got, err := svc.GetKnowledgeFactLatest("fact-1")
+	if err != nil {
+		t.Fatalf("get missing fact latest: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil for missing fact, got %+v", got)
+	}
+
+	rec := &KnowledgeFactRecord{
+		FactID:     "fact-1",
+		GroupName:  "g",
+		Subject:    "service",
+		Predicate:  "runbook",
+		Object:     "v1",
+		Version:    1,
+		Source:     "decision:d1",
+		ProposalID: "p1",
+		DecisionID: "d1",
+		Tags:       `["ops"]`,
+	}
+	if err := svc.UpsertKnowledgeFactLatest(rec); err != nil {
+		t.Fatalf("upsert fact v1: %v", err)
+	}
+	got, err = svc.GetKnowledgeFactLatest("fact-1")
+	if err != nil {
+		t.Fatalf("get fact v1: %v", err)
+	}
+	if got == nil || got.Version != 1 || got.Object != "v1" {
+		t.Fatalf("unexpected fact v1: %+v", got)
+	}
+
+	rec.Object = "v2"
+	rec.Version = 2
+	if err := svc.UpsertKnowledgeFactLatest(rec); err != nil {
+		t.Fatalf("upsert fact v2: %v", err)
+	}
+	got, err = svc.GetKnowledgeFactLatest("fact-1")
+	if err != nil {
+		t.Fatalf("get fact v2: %v", err)
+	}
+	if got == nil || got.Version != 2 || got.Object != "v2" {
+		t.Fatalf("unexpected fact v2: %+v", got)
+	}
+}
+
+func TestKnowledgeProposalVoteCRUD(t *testing.T) {
+	svc := newTestTimeline(t)
+	prop := &KnowledgeProposalRecord{
+		ProposalID:         "p1",
+		GroupName:          "g1",
+		Title:              "Runbook update",
+		Statement:          "Use v2",
+		Tags:               `["ops"]`,
+		ProposerClawID:     "claw-a",
+		ProposerInstanceID: "inst-a",
+	}
+	if err := svc.CreateKnowledgeProposal(prop); err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	got, err := svc.GetKnowledgeProposal("p1")
+	if err != nil {
+		t.Fatalf("get proposal: %v", err)
+	}
+	if got == nil || got.Status != "pending" {
+		t.Fatalf("unexpected proposal: %+v", got)
+	}
+	list, err := svc.ListKnowledgeProposals("pending", 20, 0)
+	if err != nil {
+		t.Fatalf("list proposals: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 proposal, got %d", len(list))
+	}
+
+	if err := svc.UpsertKnowledgeVote(&KnowledgeVoteRecord{
+		ProposalID: "p1",
+		ClawID:     "claw-b",
+		InstanceID: "inst-b",
+		Vote:       "yes",
+		Reason:     "looks good",
+		TraceID:    "trace-1",
+	}); err != nil {
+		t.Fatalf("upsert vote: %v", err)
+	}
+	if err := svc.UpsertKnowledgeVote(&KnowledgeVoteRecord{
+		ProposalID: "p1",
+		ClawID:     "claw-b",
+		InstanceID: "inst-b",
+		Vote:       "no",
+		Reason:     "changed",
+		TraceID:    "trace-2",
+	}); err != nil {
+		t.Fatalf("upsert vote overwrite: %v", err)
+	}
+	votes, err := svc.ListKnowledgeVotes("p1")
+	if err != nil {
+		t.Fatalf("list votes: %v", err)
+	}
+	if len(votes) != 1 || votes[0].Vote != "no" {
+		t.Fatalf("expected one overwritten vote=no, got %+v", votes)
+	}
+	if err := svc.UpdateKnowledgeProposalDecision("p1", "rejected", 1, 2, "quorum no"); err != nil {
+		t.Fatalf("update proposal decision: %v", err)
+	}
+	got, err = svc.GetKnowledgeProposal("p1")
+	if err != nil {
+		t.Fatalf("get proposal after decision: %v", err)
+	}
+	if got == nil || got.Status != "rejected" || got.NoVotes != 2 {
+		t.Fatalf("unexpected proposal after decision: %+v", got)
+	}
+}
+
+func TestListAndCountKnowledgeFacts(t *testing.T) {
+	svc := newTestTimeline(t)
+	if err := svc.UpsertKnowledgeFactLatest(&KnowledgeFactRecord{
+		FactID:    "f1",
+		GroupName: "g1",
+		Subject:   "svc",
+		Predicate: "runbook",
+		Object:    "v1",
+		Version:   1,
+		Source:    "decision:d1",
+		Tags:      "[]",
+	}); err != nil {
+		t.Fatalf("upsert fact1: %v", err)
+	}
+	if err := svc.UpsertKnowledgeFactLatest(&KnowledgeFactRecord{
+		FactID:    "f2",
+		GroupName: "g2",
+		Subject:   "svc",
+		Predicate: "owner",
+		Object:    "team-a",
+		Version:   1,
+		Source:    "decision:d2",
+		Tags:      "[]",
+	}); err != nil {
+		t.Fatalf("upsert fact2: %v", err)
+	}
+	all, err := svc.ListKnowledgeFacts("", 20, 0)
+	if err != nil {
+		t.Fatalf("list all facts: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected 2 facts, got %d", len(all))
+	}
+	g1, err := svc.ListKnowledgeFacts("g1", 20, 0)
+	if err != nil {
+		t.Fatalf("list g1 facts: %v", err)
+	}
+	if len(g1) != 1 || g1[0].FactID != "f1" {
+		t.Fatalf("unexpected g1 facts: %+v", g1)
+	}
+	count, err := svc.CountKnowledgeFacts("g1")
+	if err != nil {
+		t.Fatalf("count g1 facts: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected g1 count 1, got %d", count)
+	}
+}
+
 func TestListTasks(t *testing.T) {
 	svc := newTestTimeline(t)
 
