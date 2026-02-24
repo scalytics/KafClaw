@@ -410,6 +410,7 @@ Auth note:
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/memory/status` | Layer stats, observer, ER1, expertise |
+| GET | `/api/v1/memory/metrics` | Memory/knowledge SLO metrics (precision/recall proxies, overflow, stale/conflict) |
 | POST | `/api/v1/memory/reset` | Reset layer or all |
 | POST | `/api/v1/memory/config` | Update memory settings |
 | POST | `/api/v1/memory/prune` | Trigger lifecycle pruning |

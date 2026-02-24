@@ -2366,6 +2366,27 @@ func runGatewayMain(cmd *cobra.Command, args []string) {
 			})
 		})
 
+		// API: Memory + Knowledge Metrics (GET)
+		mux.HandleFunc("/api/v1/memory/metrics", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method == "OPTIONS" {
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			payload, err := collectMemoryKnowledgeMetrics(timeSvc)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(payload)
+		})
+
 		// API: Memory Reset (POST)
 		mux.HandleFunc("/api/v1/memory/reset", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -3814,6 +3835,106 @@ func inferNodeCapabilities(cfg *config.Config) []string {
 		filtered = append(filtered, v)
 	}
 	return filtered
+}
+
+func collectMemoryKnowledgeMetrics(timeSvc *timeline.TimelineService) (map[string]any, error) {
+	if timeSvc == nil {
+		return map[string]any{
+			"status": "ok",
+			"slo":    map[string]any{},
+		}, nil
+	}
+	var totalChunks int64
+	_ = timeSvc.DB().QueryRow(`SELECT COUNT(*) FROM memory_chunks`).Scan(&totalChunks)
+	embeddedChunks, _ := countEmbeddedMemoryChunks()
+	overflowTotal := parseSettingInt(timeSvc, "memory_overflow_events_total")
+
+	factAccepted := countTimelineClassifications(timeSvc, "KNOWLEDGE_FACT_ACCEPTED")
+	factStale := countTimelineClassifications(timeSvc, "KNOWLEDGE_FACT_STALE")
+	factConflict := countTimelineClassifications(timeSvc, "KNOWLEDGE_FACT_CONFLICT")
+
+	approved, _ := timeSvc.ListKnowledgeProposals("approved", 10000, 0)
+	rejected, _ := timeSvc.ListKnowledgeProposals("rejected", 10000, 0)
+	expired, _ := timeSvc.ListKnowledgeProposals("expired", 10000, 0)
+	factsCount, _ := timeSvc.CountKnowledgeFacts("")
+
+	decisionCount := len(approved) + len(rejected) + len(expired)
+	precisionProxy := safeRatio(float64(len(approved)), float64(decisionCount))
+	recallProxy := safeRatio(float64(factsCount), float64(maxInt(1, len(approved))))
+	conflictRate := safeRatio(float64(factConflict), float64(maxInt(1, factAccepted+factStale+factConflict)))
+
+	return map[string]any{
+		"status": "ok",
+		"memory": map[string]any{
+			"chunksTotal":     totalChunks,
+			"chunksEmbedded":  embeddedChunks,
+			"overflowEvents":  overflowTotal,
+			"overflowPer1000": safeRatio(float64(overflowTotal*1000), float64(maxInt64(1, totalChunks))),
+		},
+		"knowledge": map[string]any{
+			"factsAccepted": factAccepted,
+			"factsStale":    factStale,
+			"factsConflict": factConflict,
+			"factsLatest":   factsCount,
+			"decisions": map[string]int{
+				"approved": len(approved),
+				"rejected": len(rejected),
+				"expired":  len(expired),
+			},
+		},
+		"slo": map[string]any{
+			"precisionProxy": precisionProxy,
+			"recallProxy":    recallProxy,
+			"conflictRate":   conflictRate,
+		},
+	}, nil
+}
+
+func countTimelineClassifications(timeSvc *timeline.TimelineService, classification string) int {
+	if timeSvc == nil || strings.TrimSpace(classification) == "" {
+		return 0
+	}
+	var count int
+	if err := timeSvc.DB().QueryRow(`SELECT COUNT(*) FROM timeline_events WHERE classification = ?`, classification).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}
+
+func parseSettingInt(timeSvc *timeline.TimelineService, key string) int {
+	if timeSvc == nil || strings.TrimSpace(key) == "" {
+		return 0
+	}
+	raw, err := timeSvc.GetSetting(key)
+	if err != nil {
+		return 0
+	}
+	n, convErr := strconv.Atoi(strings.TrimSpace(raw))
+	if convErr != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+func safeRatio(num, den float64) float64 {
+	if den <= 0 {
+		return 0
+	}
+	return num / den
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 type RepoItem struct {

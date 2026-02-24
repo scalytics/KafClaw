@@ -211,6 +211,7 @@ func TestRunGatewayServesDashboardEndpoints(t *testing.T) {
 	call(http.MethodGet, "/api/v1/settings", "")
 	call(http.MethodPost, "/api/v1/settings", `{"key":"silent_mode","value":"false"}`)
 	call(http.MethodGet, "/api/v1/memory/status", "")
+	call(http.MethodGet, "/api/v1/memory/metrics", "")
 	call(http.MethodGet, "/api/v1/memory/embedding/status", "")
 	call(http.MethodGet, "/api/v1/memory/embedding/healthz", "")
 	call(http.MethodPost, "/api/v1/memory/embedding/install", `{"model":"BAAI/bge-small-en-v1.5"}`)

@@ -47,6 +47,8 @@ Most-used keys stored in `timeline.db`:
 | `knowledge_capabilities_last_at` | Last published knowledge capabilities announcement (RFC3339 UTC) |
 | `memory_embedding_install_requested_at` | Last embedding install bootstrap request timestamp (RFC3339 UTC) |
 | `memory_embedding_install_model` | Embedding model last requested for install/bootstrap |
+| `memory_overflow_events_total` | Count of memory-context truncation events due to budget limits |
+| `memory_overflow_events_<lane>` | Per-lane overflow counters (e.g. `rag`, `working`, `observation`) |
 
 ## Useful CLI Commands
 

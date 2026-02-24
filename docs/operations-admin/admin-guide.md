@@ -474,6 +474,7 @@ User Query --> Embed(query) --> VectorStore.Search(top 5) --> Filter(score >= 0.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/memory/status` | GET | Layer stats, observer, ER1, expertise |
+| `/api/v1/memory/metrics` | GET | Memory/knowledge SLO metrics (precision/recall proxies, overflow, stale/conflict) |
 | `/api/v1/memory/reset` | POST | Reset layer or all |
 | `/api/v1/memory/config` | POST | Update memory settings |
 | `/api/v1/memory/prune` | POST | Trigger lifecycle pruning |

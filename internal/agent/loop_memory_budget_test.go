@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/KafClaw/KafClaw/internal/config"
 	"github.com/KafClaw/KafClaw/internal/memory"
 	"github.com/KafClaw/KafClaw/internal/provider"
+	"github.com/KafClaw/KafClaw/internal/timeline"
 )
 
 func TestMemoryLaneTopKAndMinScoreDefaults(t *testing.T) {
@@ -130,5 +132,87 @@ func TestTrimTailObservations(t *testing.T) {
 	got := trimTailObservations(in, 2)
 	if len(got) != 2 || got[0].ID != "3" || got[1].ID != "4" {
 		t.Fatalf("unexpected tail trim result: %+v", got)
+	}
+}
+
+func TestSectionWouldOverflow(t *testing.T) {
+	if sectionWouldOverflow("", 10, 10) {
+		t.Fatal("empty section should not overflow")
+	}
+	if !sectionWouldOverflow("abc", 2, 10) {
+		t.Fatal("expected overflow when section cap is lower than content length")
+	}
+	if !sectionWouldOverflow("abc", 10, 0) {
+		t.Fatal("expected overflow when budget is exhausted")
+	}
+	if sectionWouldOverflow("abc", 10, 10) {
+		t.Fatal("expected no overflow when section fits")
+	}
+}
+
+func TestRecordMemoryOverflowIncrementsCounters(t *testing.T) {
+	tl, err := timeline.NewTimelineService(filepath.Join(t.TempDir(), "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+
+	l := &Loop{timeline: tl}
+	l.recordMemoryOverflow("rag")
+	l.recordMemoryOverflow("rag")
+
+	total, err := tl.GetSetting("memory_overflow_events_total")
+	if err != nil {
+		t.Fatalf("get total overflow setting: %v", err)
+	}
+	if total != "2" {
+		t.Fatalf("expected total overflow count 2, got %s", total)
+	}
+	rag, err := tl.GetSetting("memory_overflow_events_rag")
+	if err != nil {
+		t.Fatalf("get rag overflow setting: %v", err)
+	}
+	if rag != "2" {
+		t.Fatalf("expected rag overflow count 2, got %s", rag)
+	}
+}
+
+func TestRecordMemoryOverflowWithTraceAddsEvent(t *testing.T) {
+	tl, err := timeline.NewTimelineService(filepath.Join(t.TempDir(), "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+
+	l := &Loop{timeline: tl, activeTraceID: "trace-1"}
+	l.recordMemoryOverflow("observation")
+
+	var count int
+	if err := tl.DB().QueryRow(`SELECT COUNT(*) FROM timeline WHERE trace_id = ? AND classification = 'MEMORY_CONTEXT_OVERFLOW'`, "trace-1").Scan(&count); err != nil {
+		t.Fatalf("count trace overflow events: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one MEMORY_CONTEXT_OVERFLOW event, got %d", count)
+	}
+}
+
+func TestIncrementSettingCounterHandlesInvalidCurrentValue(t *testing.T) {
+	tl, err := timeline.NewTimelineService(filepath.Join(t.TempDir(), "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+
+	if err := tl.SetSetting("counter-x", "not-a-number"); err != nil {
+		t.Fatalf("seed invalid setting: %v", err)
+	}
+	incrementSettingCounter(tl, "counter-x")
+
+	v, err := tl.GetSetting("counter-x")
+	if err != nil {
+		t.Fatalf("get counter-x: %v", err)
+	}
+	if v != "1" {
+		t.Fatalf("expected invalid value reset to 1, got %s", v)
 	}
 }

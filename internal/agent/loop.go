@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1013,7 +1014,12 @@ func (l *Loop) injectRAGContext(ctx context.Context, messages []provider.Message
 	}
 
 	section := sb.String()
-	return appendSectionWithBudget(messages, section, ragSectionCapChars, budgetChars)
+	truncated := sectionWouldOverflow(section, ragSectionCapChars, budgetChars)
+	updated, remaining := appendSectionWithBudget(messages, section, ragSectionCapChars, budgetChars)
+	if truncated {
+		l.recordMemoryOverflow("rag")
+	}
+	return updated, remaining
 }
 
 // injectWorkingMemory loads scoped working memory and appends it to the system prompt.
@@ -1046,7 +1052,13 @@ func (l *Loop) injectWorkingMemory(messages []provider.Message, resourceID, thre
 		sb.WriteString("\n")
 	}
 
-	return appendSectionWithBudget(messages, sb.String(), workingMemorySectionCapChars, budgetChars)
+	section := sb.String()
+	truncated := sectionWouldOverflow(section, workingMemorySectionCapChars, budgetChars)
+	updated, remaining := appendSectionWithBudget(messages, section, workingMemorySectionCapChars, budgetChars)
+	if truncated {
+		l.recordMemoryOverflow("working")
+	}
+	return updated, remaining
 }
 
 // injectObservations loads compressed observation notes and appends them to the system prompt.
@@ -1067,7 +1079,13 @@ func (l *Loop) injectObservations(messages []provider.Message, sessionID string,
 		return messages, budgetChars
 	}
 
-	return appendSectionWithBudget(messages, "\n\n---\n\n"+formatted, observationsSectionCapChars, budgetChars)
+	section := "\n\n---\n\n" + formatted
+	truncated := sectionWouldOverflow(section, observationsSectionCapChars, budgetChars)
+	updated, remaining := appendSectionWithBudget(messages, section, observationsSectionCapChars, budgetChars)
+	if truncated {
+		l.recordMemoryOverflow("observation")
+	}
+	return updated, remaining
 }
 
 func (l *Loop) memoryInjectionBudgetChars() int {
@@ -1123,6 +1141,60 @@ func appendSectionWithBudget(messages []provider.Message, section string, sectio
 	messages[0].Content += section
 	remaining := budgetChars - len(section)
 	return messages, remaining
+}
+
+func sectionWouldOverflow(section string, sectionCapChars, budgetChars int) bool {
+	if section == "" {
+		return false
+	}
+	if budgetChars <= 0 {
+		return true
+	}
+	capChars := sectionCapChars
+	if capChars <= 0 || capChars > budgetChars {
+		capChars = budgetChars
+	}
+	return len(section) > capChars
+}
+
+func (l *Loop) recordMemoryOverflow(lane string) {
+	if l == nil || l.timeline == nil {
+		return
+	}
+	lane = strings.TrimSpace(strings.ToLower(lane))
+	if lane == "" {
+		lane = "unknown"
+	}
+	incrementSettingCounter(l.timeline, "memory_overflow_events_total")
+	incrementSettingCounter(l.timeline, "memory_overflow_events_"+lane)
+
+	if l.activeTraceID != "" {
+		_ = l.timeline.AddEvent(&timeline.TimelineEvent{
+			EventID:        fmt.Sprintf("MEMORY_OVERFLOW_%d", time.Now().UnixNano()),
+			TraceID:        l.activeTraceID,
+			Timestamp:      time.Now(),
+			SenderID:       "system",
+			SenderName:     "KafClaw",
+			EventType:      "SYSTEM",
+			ContentText:    fmt.Sprintf("memory context section truncated due to budget (lane=%s)", lane),
+			Classification: "MEMORY_CONTEXT_OVERFLOW",
+			Authorized:     true,
+			Metadata:       fmt.Sprintf(`{"lane":"%s"}`, lane),
+		})
+	}
+}
+
+func incrementSettingCounter(timeSvc *timeline.TimelineService, key string) {
+	if timeSvc == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	next := 1
+	if raw, err := timeSvc.GetSetting(key); err == nil {
+		if n, convErr := strconv.Atoi(strings.TrimSpace(raw)); convErr == nil && n >= 0 {
+			next = n + 1
+		}
+	}
+	_ = timeSvc.SetSetting(key, strconv.Itoa(next))
 }
 
 func truncateWithEllipsis(s string, maxChars int) string {

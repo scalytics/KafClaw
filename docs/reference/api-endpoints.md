@@ -11,7 +11,7 @@ Runtime HTTP surfaces:
 - Dashboard/API server (default `:18791`)
   - status/auth: `/api/v1/status`, `/api/v1/auth/verify`
   - timeline/traces: `/api/v1/timeline`, `/api/v1/trace/{traceID}`, `/api/v1/trace-graph/{traceID}`
-  - memory: `/api/v1/memory/status`, `/api/v1/memory/reset`, `/api/v1/memory/config`, `/api/v1/memory/prune`
+  - memory: `/api/v1/memory/status`, `/api/v1/memory/metrics`, `/api/v1/memory/reset`, `/api/v1/memory/config`, `/api/v1/memory/prune`
   - embedding runtime: `/api/v1/memory/embedding/status`, `/api/v1/memory/embedding/healthz`, `/api/v1/memory/embedding/install`, `/api/v1/memory/embedding/reindex`
   - settings: `/api/v1/settings`, `/api/v1/workrepo`
   - approvals/tasks: `/api/v1/approvals/*`, `/api/v1/tasks`

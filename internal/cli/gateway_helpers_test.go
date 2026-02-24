@@ -241,6 +241,68 @@ func TestInferNodeCapabilities(t *testing.T) {
 	}
 }
 
+func TestCollectMemoryKnowledgeMetrics(t *testing.T) {
+	tl, err := timeline.NewTimelineService(filepath.Join(t.TempDir(), "timeline.db"))
+	if err != nil {
+		t.Fatalf("open timeline: %v", err)
+	}
+	defer tl.Close()
+
+	if err := tl.SetSetting("memory_overflow_events_total", "3"); err != nil {
+		t.Fatalf("set overflow setting: %v", err)
+	}
+	_, _ = tl.DB().Exec(`INSERT INTO memory_chunks (content, source) VALUES ('a','s')`)
+	_, _ = tl.DB().Exec(`INSERT INTO memory_chunks (content, source, embedding) VALUES ('b','s',x'00000000')`)
+
+	_ = tl.AddEvent(&timeline.TimelineEvent{EventID: "E1", Timestamp: time.Now(), SenderID: "s", SenderName: "n", EventType: "SYSTEM", ContentText: "x", Classification: "KNOWLEDGE_FACT_ACCEPTED", Authorized: true})
+	_ = tl.AddEvent(&timeline.TimelineEvent{EventID: "E2", Timestamp: time.Now(), SenderID: "s", SenderName: "n", EventType: "SYSTEM", ContentText: "x", Classification: "KNOWLEDGE_FACT_STALE", Authorized: true})
+	_ = tl.AddEvent(&timeline.TimelineEvent{EventID: "E3", Timestamp: time.Now(), SenderID: "s", SenderName: "n", EventType: "SYSTEM", ContentText: "x", Classification: "KNOWLEDGE_FACT_CONFLICT", Authorized: true})
+
+	_ = tl.CreateKnowledgeProposal(&timeline.KnowledgeProposalRecord{
+		ProposalID:         "p1",
+		GroupName:          "g1",
+		Statement:          "s1",
+		Tags:               "[]",
+		ProposerClawID:     "c1",
+		ProposerInstanceID: "i1",
+		Status:             "approved",
+	})
+	_ = tl.CreateKnowledgeProposal(&timeline.KnowledgeProposalRecord{
+		ProposalID:         "p2",
+		GroupName:          "g1",
+		Statement:          "s2",
+		Tags:               "[]",
+		ProposerClawID:     "c2",
+		ProposerInstanceID: "i2",
+		Status:             "rejected",
+	})
+	_ = tl.UpsertKnowledgeFactLatest(&timeline.KnowledgeFactRecord{
+		FactID:    "f1",
+		GroupName: "g1",
+		Subject:   "svc",
+		Predicate: "runbook",
+		Object:    "v2",
+		Version:   1,
+		Source:    "decision:p1",
+		Tags:      "[]",
+	})
+
+	got, err := collectMemoryKnowledgeMetrics(tl)
+	if err != nil {
+		t.Fatalf("collect metrics: %v", err)
+	}
+	if got["status"] != "ok" {
+		t.Fatalf("expected status ok, got %#v", got["status"])
+	}
+	mem, ok := got["memory"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing memory metrics: %#v", got)
+	}
+	if mem["overflowEvents"] != 3 {
+		t.Fatalf("expected overflowEvents=3, got %#v", mem["overflowEvents"])
+	}
+}
+
 func TestRunGitAndRunGhRepoValidation(t *testing.T) {
 	if _, err := runGit(""); err == nil {
 		t.Fatal("expected runGit to reject empty repo")
