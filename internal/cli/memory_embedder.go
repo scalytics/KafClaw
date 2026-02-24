@@ -72,4 +72,3 @@ func (d *defaultModelEmbedder) Embed(ctx context.Context, req *provider.Embeddin
 	}
 	return d.inner.Embed(ctx, &clone)
 }
-
