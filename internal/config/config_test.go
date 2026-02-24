@@ -36,6 +36,18 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Tools.Subagents.ArchiveAfterMinutes != 60 {
 		t.Errorf("expected subagents archiveAfterMinutes 60, got %d", cfg.Tools.Subagents.ArchiveAfterMinutes)
 	}
+	if cfg.Node.ClawID == "" {
+		t.Error("expected default node.clawId to be set")
+	}
+	if !cfg.Memory.Embedding.Enabled {
+		t.Error("expected memory embedding enabled by default")
+	}
+	if cfg.Memory.Embedding.Provider != "local-hf" {
+		t.Errorf("expected memory embedding provider local-hf, got %s", cfg.Memory.Embedding.Provider)
+	}
+	if cfg.Knowledge.ShareMode != "proposal" {
+		t.Errorf("expected knowledge shareMode proposal, got %s", cfg.Knowledge.ShareMode)
+	}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -271,5 +283,288 @@ func TestLoadToolsSubagentsPrecedenceOverAgentsDefaults(t *testing.T) {
 	}
 	if cfg.Tools.Subagents.MaxConcurrent != 9 || cfg.Tools.Subagents.MaxSpawnDepth != 1 || cfg.Tools.Subagents.MaxChildrenPerAgent != 7 {
 		t.Fatalf("expected tools.subagents to override agents.defaults.subagents, got %+v", cfg.Tools.Subagents)
+	}
+}
+
+func TestLoadMemoryKnowledgeNormalizationAndTopics(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, ".kafclaw")
+	os.MkdirAll(configDir, 0755)
+	configFile := filepath.Join(configDir, "config.json")
+
+	configJSON := `{
+		"group": {
+			"groupName": "teamalpha"
+		},
+		"node": {
+			"clawId": "",
+			"instanceId": ""
+		},
+		"memory": {
+			"embedding": {
+				"enabled": true,
+				"provider": "unknown",
+				"model": "",
+				"dimension": 0,
+				"startupTimeoutSec": 0
+			},
+			"search": {
+				"mode": "invalid",
+				"maxResults": 0,
+				"minScore": 2
+			}
+		},
+		"knowledge": {
+			"enabled": true,
+			"group": "",
+			"shareMode": "invalid",
+			"topics": {},
+			"publish": {},
+			"voting": {
+				"minPoolSize": 0,
+				"quorumYes": 0,
+				"quorumNo": 0,
+				"timeoutSec": 0
+			}
+		}
+	}`
+	os.WriteFile(configFile, []byte(configJSON), 0600)
+
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.Node.ClawID == "" || cfg.Node.InstanceID == "" {
+		t.Fatalf("expected normalized node identity defaults, got %+v", cfg.Node)
+	}
+	if cfg.Memory.Embedding.Provider != "local-hf" {
+		t.Fatalf("expected normalized embedding provider local-hf, got %s", cfg.Memory.Embedding.Provider)
+	}
+	if cfg.Memory.Embedding.Model == "" || cfg.Memory.Embedding.Dimension <= 0 || cfg.Memory.Embedding.StartupTimeoutSec <= 0 {
+		t.Fatalf("expected normalized embedding defaults, got %+v", cfg.Memory.Embedding)
+	}
+	if cfg.Memory.Search.Mode != "hybrid" || cfg.Memory.Search.MaxResults <= 0 || cfg.Memory.Search.MinScore != 1 {
+		t.Fatalf("expected normalized memory search settings, got %+v", cfg.Memory.Search)
+	}
+	if cfg.Knowledge.Group != "teamalpha" {
+		t.Fatalf("expected knowledge group fallback to group.groupName, got %s", cfg.Knowledge.Group)
+	}
+	if cfg.Knowledge.ShareMode != "proposal" {
+		t.Fatalf("expected knowledge shareMode fallback proposal, got %s", cfg.Knowledge.ShareMode)
+	}
+	if cfg.Knowledge.Topics.Proposals != "group.teamalpha.knowledge.proposals" ||
+		cfg.Knowledge.Topics.Votes != "group.teamalpha.knowledge.votes" ||
+		cfg.Knowledge.Topics.Facts != "group.teamalpha.knowledge.facts" {
+		t.Fatalf("expected knowledge topics derived from group, got %+v", cfg.Knowledge.Topics)
+	}
+	if cfg.Knowledge.Voting.MinPoolSize <= 0 || cfg.Knowledge.Voting.QuorumYes <= 0 || cfg.Knowledge.Voting.TimeoutSec <= 0 {
+		t.Fatalf("expected normalized voting defaults, got %+v", cfg.Knowledge.Voting)
+	}
+	if len(cfg.Knowledge.Publish.DenyTags) == 0 || len(cfg.Knowledge.Publish.AllowTags) == 0 {
+		t.Fatalf("expected publish tag defaults, got %+v", cfg.Knowledge.Publish)
+	}
+}
+
+func TestLoadMemoryEmbeddingDisabledNormalizesProvider(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, ".kafclaw")
+	os.MkdirAll(configDir, 0755)
+	configFile := filepath.Join(configDir, "config.json")
+
+	configJSON := `{
+		"memory": {
+			"embedding": {
+				"enabled": false,
+				"provider": "openai"
+			}
+		}
+	}`
+	os.WriteFile(configFile, []byte(configJSON), 0600)
+
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Memory.Embedding.Enabled {
+		t.Fatalf("expected embedding disabled, got %+v", cfg.Memory.Embedding)
+	}
+	if cfg.Memory.Embedding.Provider != "disabled" {
+		t.Fatalf("expected disabled embedding provider marker, got %s", cfg.Memory.Embedding.Provider)
+	}
+}
+
+func TestLoadMemoryKnowledgePreservesValidValues(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, ".kafclaw")
+	os.MkdirAll(configDir, 0755)
+	configFile := filepath.Join(configDir, "config.json")
+
+	configJSON := `{
+		"memory": {
+			"embedding": {
+				"enabled": true,
+				"provider": "openai",
+				"model": "text-embedding-3-small",
+				"dimension": 1536,
+				"startupTimeoutSec": 30
+			},
+			"search": {
+				"mode": "semantic",
+				"maxResults": 12,
+				"minScore": -5
+			}
+		},
+		"knowledge": {
+			"enabled": true,
+			"group": "kg",
+			"shareMode": "direct",
+			"topics": {
+				"proposals": "custom.proposals",
+				"votes": "custom.votes"
+			},
+			"voting": {
+				"minPoolSize": 5,
+				"quorumYes": 3,
+				"quorumNo": 3,
+				"timeoutSec": 300
+			}
+		}
+	}`
+	os.WriteFile(configFile, []byte(configJSON), 0600)
+
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", origHome)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Memory.Embedding.Provider != "openai" {
+		t.Fatalf("expected provider openai, got %s", cfg.Memory.Embedding.Provider)
+	}
+	if cfg.Memory.Search.Mode != "semantic" {
+		t.Fatalf("expected search mode semantic, got %s", cfg.Memory.Search.Mode)
+	}
+	if cfg.Memory.Search.MinScore != 0 {
+		t.Fatalf("expected minScore clamped to 0, got %f", cfg.Memory.Search.MinScore)
+	}
+	if cfg.Knowledge.ShareMode != "direct" {
+		t.Fatalf("expected direct share mode, got %s", cfg.Knowledge.ShareMode)
+	}
+	if cfg.Knowledge.Topics.Proposals != "custom.proposals" || cfg.Knowledge.Topics.Votes != "custom.votes" {
+		t.Fatalf("expected custom topics preserved, got %+v", cfg.Knowledge.Topics)
+	}
+	if cfg.Knowledge.Voting.MinPoolSize != 5 || cfg.Knowledge.Voting.QuorumYes != 3 || cfg.Knowledge.Voting.TimeoutSec != 300 {
+		t.Fatalf("expected explicit voting settings preserved, got %+v", cfg.Knowledge.Voting)
+	}
+}
+
+func TestNormalizeMemoryKnowledgeConfigBranches(t *testing.T) {
+	normalizeMemoryKnowledgeConfig(nil) // nil-safe guard
+
+	cfg := &Config{
+		Group: GroupConfig{GroupName: "autogroup"},
+		Node:  NodeConfig{},
+		Memory: MemoryConfig{
+			Embedding: MemoryEmbeddingConfig{
+				Enabled:           true,
+				Provider:          "",
+				Model:             "",
+				Dimension:         0,
+				CacheDir:          "",
+				Endpoint:          "",
+				StartupTimeoutSec: 0,
+			},
+			Search: MemorySearchConfig{
+				Mode:       "keyword",
+				MaxResults: 0,
+				MinScore:   -1,
+			},
+		},
+		Knowledge: KnowledgeConfig{
+			Group:    "",
+			ShareMode: "",
+			Topics:   DefaultConfig().Knowledge.Topics,
+			Publish:  KnowledgePublishConfig{},
+			Voting: KnowledgeVotingConfig{
+				MinPoolSize: 0,
+				QuorumYes:   0,
+				QuorumNo:    0,
+				TimeoutSec:  0,
+			},
+		},
+	}
+	normalizeMemoryKnowledgeConfig(cfg)
+
+	if cfg.Node.ClawID == "" || cfg.Node.InstanceID == "" || cfg.Node.DisplayName == "" {
+		t.Fatalf("expected node defaults after normalize, got %+v", cfg.Node)
+	}
+	if cfg.Memory.Embedding.Provider != "local-hf" {
+		t.Fatalf("expected local-hf provider default, got %s", cfg.Memory.Embedding.Provider)
+	}
+	if cfg.Memory.Embedding.Model == "" || cfg.Memory.Embedding.Dimension <= 0 || cfg.Memory.Embedding.StartupTimeoutSec <= 0 {
+		t.Fatalf("expected embedding defaults after normalize, got %+v", cfg.Memory.Embedding)
+	}
+	if cfg.Memory.Search.Mode != "keyword" || cfg.Memory.Search.MaxResults <= 0 || cfg.Memory.Search.MinScore != 0 {
+		t.Fatalf("expected keyword mode preserved + clamped search values, got %+v", cfg.Memory.Search)
+	}
+	if cfg.Knowledge.Group != "autogroup" {
+		t.Fatalf("expected fallback knowledge group from group.groupName, got %s", cfg.Knowledge.Group)
+	}
+	if cfg.Knowledge.ShareMode != "proposal" {
+		t.Fatalf("expected proposal share mode default, got %s", cfg.Knowledge.ShareMode)
+	}
+	if cfg.Knowledge.Topics.Proposals != "group.autogroup.knowledge.proposals" {
+		t.Fatalf("expected autogroup-derived proposals topic, got %s", cfg.Knowledge.Topics.Proposals)
+	}
+	if len(cfg.Knowledge.Publish.AllowTags) == 0 || len(cfg.Knowledge.Publish.DenyTags) == 0 {
+		t.Fatalf("expected publish tags defaulted, got %+v", cfg.Knowledge.Publish)
+	}
+	if cfg.Knowledge.Voting.MinPoolSize <= 0 || cfg.Knowledge.Voting.QuorumYes <= 0 || cfg.Knowledge.Voting.TimeoutSec <= 0 {
+		t.Fatalf("expected voting defaults, got %+v", cfg.Knowledge.Voting)
+	}
+
+	cfg.Memory.Embedding = MemoryEmbeddingConfig{Enabled: false, Provider: "openai"}
+	cfg.Memory.Search = MemorySearchConfig{Mode: "semantic", MaxResults: 3, MinScore: 2}
+	cfg.Knowledge.ShareMode = "direct"
+	cfg.Knowledge.Group = ""
+	cfg.Group.GroupName = ""
+	cfg.Knowledge.Topics = KnowledgeTopicsConfig{}
+	normalizeMemoryKnowledgeConfig(cfg)
+
+	if cfg.Memory.Embedding.Enabled || cfg.Memory.Embedding.Provider != "disabled" {
+		t.Fatalf("expected disabled marker when embedding disabled, got %+v", cfg.Memory.Embedding)
+	}
+	if cfg.Memory.Search.Mode != "semantic" || cfg.Memory.Search.MinScore != 1 {
+		t.Fatalf("expected semantic mode preserved and minScore clamped to 1, got %+v", cfg.Memory.Search)
+	}
+	if cfg.Knowledge.Group != DefaultConfig().Knowledge.Group {
+		t.Fatalf("expected default knowledge group fallback, got %s", cfg.Knowledge.Group)
+	}
+	if cfg.Knowledge.ShareMode != "direct" {
+		t.Fatalf("expected direct share mode preserved, got %s", cfg.Knowledge.ShareMode)
+	}
+	if cfg.Knowledge.Topics.Facts == "" || cfg.Knowledge.Topics.Decisions == "" {
+		t.Fatalf("expected topics filled from default group, got %+v", cfg.Knowledge.Topics)
+	}
+
+	cfg.Memory.Embedding = MemoryEmbeddingConfig{Enabled: true, Provider: "openai", Model: "x", Dimension: 123, StartupTimeoutSec: 10}
+	cfg.Memory.Search = MemorySearchConfig{Mode: "invalid", MaxResults: 1, MinScore: 0.5}
+	normalizeMemoryKnowledgeConfig(cfg)
+	if cfg.Memory.Embedding.Provider != "openai" {
+		t.Fatalf("expected openai provider preserved, got %+v", cfg.Memory.Embedding)
+	}
+	if cfg.Memory.Search.Mode != "hybrid" {
+		t.Fatalf("expected invalid search mode to normalize to hybrid, got %+v", cfg.Memory.Search)
 	}
 }
