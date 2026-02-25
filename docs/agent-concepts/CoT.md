@@ -139,3 +139,40 @@ This should be enabled per agent only when the agent's workload is deterministic
 - Not recommended: general-purpose chat or exploratory analysis agents
 
 Use `kafclaw configure` to enable or disable cascade behavior at the agent level, and keep default behavior unchanged for agents that do not need gated execution.
+
+## Migration Guide for Existing Agent Configs
+
+Use this flow when upgrading an existing installation that already has `agents.list` entries.
+
+1. Inspect your current agents:
+
+```bash
+kafclaw config get agents.list
+```
+
+2. Enable cascade only for deterministic agents:
+
+```bash
+kafclaw configure --agent-id ops --agent-cascade-enabled-set --agent-cascade-enabled=true
+kafclaw configure --agent-id runbook --agent-cascade-enabled-set --agent-cascade-enabled=true
+```
+
+3. Keep exploratory or chat agents disabled:
+
+```bash
+kafclaw configure --agent-id main --agent-cascade-enabled-set --agent-cascade-enabled=false
+```
+
+4. Verify persisted config:
+
+```bash
+kafclaw config get agents.list
+```
+
+5. Validate runtime behavior on a trace:
+
+```bash
+kafclaw task status --trace <trace-id> --json
+```
+
+For failure triage, see the runbook snippet in [Memory Governance Operations](/memory-management/memory-governance-operations/#cascade-failure-triage-snippet).
