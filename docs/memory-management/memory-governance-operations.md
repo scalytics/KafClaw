@@ -1,7 +1,7 @@
 ---
 title: Memory Governance Operations
 parent: Memory Management
-nav_order: 5
+nav_order: 3
 ---
 
 # Memory Governance Operations
