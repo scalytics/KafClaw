@@ -1,8 +1,6 @@
 module github.com/KafClaw/KafClaw
 
-go 1.24.0
-
-toolchain go1.24.13
+go 1.25
 
 require (
 	github.com/fatih/color v1.18.0
@@ -11,7 +9,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	github.com/slack-go/slack v0.17.3
+	github.com/slack-go/slack v0.23.1
 	github.com/spf13/cobra v1.10.2
 	github.com/zalando/go-keyring v0.2.6
 	go.mau.fi/whatsmeow v0.0.0-20260129212019-7787ab952245
